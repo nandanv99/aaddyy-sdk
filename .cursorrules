@@ -1,0 +1,67 @@
+# AADDYY SDK - Cursor Rules
+
+## Project Overview
+
+Official Node.js SDK for AADDYY AI Tools API. Zero dependencies (uses native fetch). TypeScript-first.
+
+### Tech Stack
+- **Runtime**: Node.js 18+ (native fetch)
+- **Language**: TypeScript (strict mode)
+- **Zero dependencies** in production (only devDeps for TS compilation)
+- **Backend**: AADDYY API at `https://backend.aaddyy.com/api`
+
+---
+
+## Project Structure
+
+```
+src/
+├── index.ts              # Main export — AADDYY class + all errors + resource classes
+├── client.ts             # AADDYY class — auth, _request(), _requestV2()
+├── errors.ts             # Typed errors: AADDYYError, InsufficientCreditsError, etc.
+└── resources/            # One file per resource group
+    ├── articles.ts       # client.articles.generate(), outline(), improve()
+    ├── titles.ts         # client.titles.generate(), seo(), abTest()
+    ├── essays.ts         # client.essays.write()
+    ├── emails.ts         # client.emails.write(), jobEmail()
+    ├── images.ts         # client.images.generate(), upscale(V2), removeWatermark(V2)
+    ├── logos.ts          # client.logos.create()
+    ├── videos.ts         # client.videos.generate(), audioToVideo(V2), eduClip(V2)
+    ├── captions.ts       # client.captions.generate(), instagram(V2), linkedin(V2)
+    ├── math.ts           # client.math.solve()
+    ├── physics.ts        # client.physics.solve()
+    ├── seo.ts            # client.seo.analyze(), backlinks()
+    ├── keywords.ts       # client.keywords.research()
+    ├── headshots.ts      # client.headshots.generate()
+    └── synonyms.ts       # client.synonyms.find()
+```
+
+---
+
+## Adding a New Resource
+
+When a new tool is added to the AADDYY backend:
+
+1. Create `src/resources/[name].ts` with a class that takes `AADDYY` client in constructor
+2. Use `this.client._request('POST', '/ai/[endpoint]', params)` for V1 tools
+3. Use `this.client._requestV2('/[endpoint]', params)` for V2 async tools
+4. Import and add as a property in `src/client.ts` (constructor + class field)
+5. Export from `src/index.ts`
+6. Update `README.md` with usage examples
+7. Rebuild: `npx tsc`
+
+### V1 vs V2
+- **V1 (synchronous)**: `_request('POST', '/ai/...', body)` — returns result immediately
+- **V2 (async)**: `_requestV2('/tool-path', body)` — submits job, polls every 2s until completed (max 600s)
+- V2 tools: upscale-image, watermark-remover, image-prompt-creator, instagram/linkedin post generators, product-photo-studio, edu-clip-generator, audio-to-video, content-curator, pdf-merge, nano-banana-2, prompt-maker, research-blog-writer
+
+---
+
+## Design Principles
+
+1. **Zero dependencies** — native fetch only (Node 18+)
+2. **API key from env** — `new AADDYY()` auto-reads `AADDYY_API_KEY`
+3. **TypeScript-first** — full type safety, declaration files emitted
+4. **V2 handled internally** — caller never sees jobId, only final result
+5. **Typed errors** — InsufficientCreditsError, RateLimitError, AuthenticationError
+6. **User-Agent** — sends `aaddyy-sdk/1.0.0 node/{version}` for analytics

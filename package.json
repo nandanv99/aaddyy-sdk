@@ -1,0 +1,37 @@
+{
+  "name": "aaddyy",
+  "version": "1.0.0",
+  "description": "Official SDK for AADDYY — 100+ AI tools via one npm package. Image generation, article writing, video creation, math solving, SEO analysis, and more.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "npx tsx src/index.ts"
+  },
+  "keywords": [
+    "ai",
+    "ai-tools",
+    "aaddyy",
+    "image-generation",
+    "article-writer",
+    "video-generation",
+    "math-solver",
+    "seo",
+    "logo-generator",
+    "sdk",
+    "api"
+  ],
+  "author": "AADDYY <support@aaddyy.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ]
+}
