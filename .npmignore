@@ -1,0 +1,8 @@
+src/
+*.ts
+!dist/**/*.d.ts
+tsconfig.json
+.cursorrules
+.gitignore
+.DS_Store
+node_modules/
