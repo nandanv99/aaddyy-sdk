@@ -21,7 +21,7 @@
     "sdk",
     "api"
   ],
-  "author": "AADDYY <support@aaddyy.com>",
+  "author": "AADDYY <hello@aaddyy.com>",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
