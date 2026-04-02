@@ -88,6 +88,33 @@ export class AADDYY {
   }
 
   /**
+   * Call any AADDYY tool by its endpoint path or tool ID.
+   * Use this for tools that don't have a dedicated resource method.
+   *
+   * @example
+   * // By endpoint path
+   * await client.tool('/ai/jewelry-designer', { keyword: 'diamond ring' })
+   *
+   * // By tool ID (auto-resolves to /ai/{id})
+   * await client.tool('ai-jewelry-designer', { keyword: 'diamond ring' })
+   */
+  async tool(toolPath: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    const path = toolPath.startsWith('/') ? toolPath : `/ai/${toolPath.replace(/^ai-/, '')}`;
+    return this._request('POST', path, params);
+  }
+
+  /**
+   * Call any V2 (async) tool by its path. Handles submit + poll automatically.
+   *
+   * @example
+   * await client.toolV2('/nano-banana-2', { prompt: 'a cat' })
+   */
+  async toolV2(toolPath: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    const path = toolPath.startsWith('/') ? toolPath : `/${toolPath.replace(/^ai-/, '')}`;
+    return this._requestV2(path, params);
+  }
+
+  /**
    * Make an authenticated API request.
    * Used internally by resource classes.
    */
