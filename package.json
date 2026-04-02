@@ -1,6 +1,6 @@
 {
   "name": "aaddyy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official SDK for AADDYY — 100+ AI tools via one npm package. Image generation, article writing, video creation, math solving, SEO analysis, and more.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
