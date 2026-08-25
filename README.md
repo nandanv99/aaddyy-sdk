@@ -1,6 +1,6 @@
 # aaddyy
 
-Official Node.js SDK for [AADDYY](https://www.aaddyy.com) — 100+ AI tools via one npm package.
+Official Node.js SDK for [AADDYY](https://www.aaddyy.com) — 49+ AI tools (auto-discovered from the live catalog) via one npm package.
 
 ## Install
 
@@ -13,29 +13,41 @@ npm install aaddyy
 ```typescript
 import { AADDYY } from 'aaddyy'
 
-const client = new AADDYY() // reads AADDYY_API_KEY from env
+const client = new AADDYY({ apiKey: 'aip_your_key' })
+// or: new AADDYY() — reads AADDYY_API_KEY from env
 
-// Generate an article
+// Synchronous (V1) tool call — result returned directly
 const article = await client.articles.generate({
   topic: 'AI trends in 2026',
   tone: 'professional',
   length: 'medium'
 })
 
-// Generate an image
-const image = await client.images.generate({
-  prompt: 'A futuristic city at sunset',
-  style: 'photorealistic'
-})
-
-// Solve a math problem
-const solution = await client.math.solve({
-  problemText: 'Integrate x^2 from 0 to 5',
-  explanationLevel: 'step-by-step'
+// Async (V2) tool call — SDK submits the job and polls until done
+const upscaled = await client.images.upscale({
+  imageUrl: 'https://example.com/photo.jpg',
+  scale: 2
 })
 ```
 
-## All Resources
+## Call any tool (generic escape hatch)
+
+Not every tool in the [live catalog](https://backend.aaddyy.com/api/documentation/tools) has a dedicated resource method. Use `client.tool()` / `client.toolV2()` to call any tool by ID or endpoint path:
+
+```typescript
+// Sync (V1): by tool ID (auto-resolves ai-jewelry-designer → POST /ai/jewelry-designer)
+const design = await client.tool('ai-jewelry-designer', { keyword: 'diamond ring' })
+
+// ...or by endpoint path
+const ghibli = await client.tool('/ai/ghibli-generator', { imageUrl: 'https://example.com/me.jpg' })
+
+// Async (V2): submit + poll handled for you
+const image = await client.toolV2('/nano-banana-2', { prompt: 'a cat astronaut' })
+```
+
+Browse tool IDs, parameters, and prices at [backend.aaddyy.com/llms.txt](https://backend.aaddyy.com/llms.txt) or the [OpenAPI spec](https://backend.aaddyy.com/openapi.json).
+
+## Typed Resources
 
 ```typescript
 const client = new AADDYY({ apiKey: 'aip_your_key' })
@@ -60,8 +72,6 @@ client.logos.create({ keyword, color, type })
 client.headshots.generate({ style, gender })
 
 // Video
-client.videos.generate({ prompt, duration })
-client.videos.audioToVideo({ audioUrl })           // async V2
 client.videos.eduClip({ topic, duration })         // async V2
 
 // Social
@@ -75,7 +85,6 @@ client.physics.solve({ problemText, explanationLevel })
 
 // SEO
 client.seo.analyze({ url })
-client.seo.backlinks({ url })
 client.keywords.research({ topic })
 ```
 
@@ -112,6 +121,9 @@ Sign up at [aaddyy.com/signup](https://www.aaddyy.com/signup) and get your API k
 ## Links
 
 - [AADDYY](https://www.aaddyy.com)
+- [Live tool catalog](https://backend.aaddyy.com/api/documentation/tools)
+- [llms.txt](https://backend.aaddyy.com/llms.txt) — machine-readable tool catalog for LLMs
+- [openapi.json](https://backend.aaddyy.com/openapi.json) — OpenAPI 3.0 spec
 - [API Docs](https://backend.aaddyy.com/api-docs/)
 - [Developer Portal](https://www.aaddyy.com/developer)
 - [Get API Key](https://www.aaddyy.com/api-keys)
