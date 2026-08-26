@@ -40,3 +40,12 @@ The official Node.js/TypeScript SDK (npm: `aaddyy`) for the AADDYY AI-tools API 
 - Live tool catalog: https://backend.aaddyy.com/api/documentation/tools
 - llms.txt: https://backend.aaddyy.com/llms.txt
 - OpenAPI: https://backend.aaddyy.com/openapi.json
+
+## When a new backend tool is added
+
+Tools are discovered dynamically from the backend catalog
+(`GET https://backend.aaddyy.com/api/documentation/tools`) at startup — a new
+tool appears here automatically once it's seeded on the backend. **No code
+change is needed to expose a new tool.**
+
+Full add-a-tool flow: `aaddyy-backend/CLAUDE.md` → "Adding a New Tool".
