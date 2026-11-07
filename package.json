@@ -1,7 +1,7 @@
 {
   "name": "aaddyy",
-  "version": "1.0.1",
-  "description": "Official SDK for AADDYY \u2014 49+ AI tools (auto-discovered from the live catalog) via one npm package. Image generation, article writing, video creation, math solving, SEO analysis, and more.",
+  "version": "1.0.3",
+  "description": "Official SDK for AADDYY \u2014 50+ AI tools via one npm package: typed methods for common tools, and tool()/toolV2() for any tool in the live catalog. Image generation, article writing, video creation, math solving, SEO analysis, and more.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -33,7 +33,8 @@
   },
   "files": [
     "dist/**/*",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "repository": {
     "type": "git",

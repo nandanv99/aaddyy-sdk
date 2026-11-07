@@ -5,18 +5,25 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const {
   AADDYYError, InsufficientCreditsError, AuthenticationError, RateLimitError,
 } = require('../dist/index.js');
 const { ok, v2, withStub, requestsOf } = require('./helpers.js');
 
-test('every request carries the API key and an SDK User-Agent', async () => {
+const pkg = require(path.join(__dirname, '..', 'package.json'));
+
+test('every request carries the API key and the package version in User-Agent', async () => {
   await withStub(() => ok({}), async (client, calls) => {
     await client.seo.analyze({ url: 'example.com' });
     assert.equal(calls[0].headers.Authorization, 'Bearer aip_test_key');
     assert.equal(calls[0].headers['Content-Type'], 'application/json');
-    assert.match(calls[0].headers['User-Agent'], /^aaddyy-sdk\/\S+ node\//);
+    assert.match(calls[0].headers['User-Agent'], new RegExp(`^aaddyy-sdk/${pkg.version.replace(/\./g, '\\.')} node/`));
   });
+});
+
+test('package.json is version 1.0.3', () => {
+  assert.equal(pkg.version, '1.0.3');
 });
 
 test('V1 resolves to the response data', async () => {

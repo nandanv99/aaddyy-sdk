@@ -37,7 +37,8 @@ export interface ApiResponse<T = unknown> {
   requestId?: string;
 }
 
-const SDK_VERSION = '1.0.0';
+/** Sent in the User-Agent header. Keep it equal to package.json "version". */
+const SDK_VERSION = '1.0.3';
 
 /**
  * Catalog tool ids whose endpoint is not /ai/<the id without "ai-">.
