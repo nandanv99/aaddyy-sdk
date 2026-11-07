@@ -25,7 +25,8 @@ export interface PhysicsSolveParams {
   unitsPreference?: 'SI' | 'Imperial' | 'Mixed';
   /** One of: english, spanish, french, hindi, arabic, chinese, custom. */
   language?: KnownString<SolverLanguage>;
-  solutionFormat?: SolutionFormat;
+  /** text, text-latex or pdf. */
+  solutionFormat?: KnownString<SolutionFormat>;
   includeConstantsAndEquations?: boolean;
 }
 

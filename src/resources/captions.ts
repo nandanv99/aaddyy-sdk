@@ -1,5 +1,5 @@
 import type { AADDYY } from '../client.js';
-import { omit, rename, toBody } from '../params.js';
+import { omit, rename, toBody, type KnownString } from '../params.js';
 
 export type CaptionOutputType = 'short_caption' | 'detailed_caption' | 'hashtag_set' | 'ai_prompt' | 'story';
 export type CaptionTone =
@@ -15,8 +15,13 @@ export interface CaptionParams {
   /** The image to caption: an http(s) URL or a base64 data URI (JPG, PNG or WEBP, up to 10 MB). */
   imageUrl: string;
   outputType?: CaptionOutputType;
-  tone?: CaptionTone;
-  platform?: CaptionPlatform;
+  /**
+   * One of: funny, romantic, inspirational, professional, casual, artistic,
+   * bold, trendy, emotional, minimal.
+   */
+  tone?: KnownString<CaptionTone>;
+  /** One of: instagram, twitter, linkedin, facebook, pinterest, threads, custom. */
+  platform?: KnownString<CaptionPlatform>;
   captionLength?: 'short' | 'medium' | 'long';
   includeEmojis?: boolean;
   includeHashtags?: boolean;

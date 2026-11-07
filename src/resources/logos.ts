@@ -1,5 +1,5 @@
 import type { AADDYY } from '../client.js';
-import { toBody } from '../params.js';
+import { toBody, type KnownString } from '../params.js';
 
 export type LogoBackground = 'transparent' | 'red' | 'blue' | 'black' | 'white';
 export type LogoStyle =
@@ -24,11 +24,15 @@ export interface LogoParams {
   description?: string;
   /** An idea for the symbol (up to 120 characters). */
   iconIdea?: string;
-  /** 1-7 of the logo types to try. */
-  logoTypes?: LogoType[];
+  /**
+   * 1-7 of the logo types to try: wordmark, lettermark, pictorial, abstract,
+   * mascot, emblem, combination.
+   */
+  logoTypes?: KnownString<LogoType>[];
   /** 1-4 hex colours, such as '#1F4D3A'. */
   palette?: string[];
-  fontMood?: LogoFontMood;
+  /** One of: auto, geometric, rounded, humanist, serif, display, script. */
+  fontMood?: KnownString<LogoFontMood>;
 }
 
 export class Logos {

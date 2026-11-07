@@ -46,8 +46,10 @@ export interface SpecializedArticleParams extends Omit<ArticleParams, 'articleTy
 export interface ArticleOutlineParams {
   /** What the article is about (3-200 characters). */
   topic: string;
-  length?: ArticleLength;
-  audience?: ArticleAudience;
+  /** short, medium or long. */
+  length?: KnownString<ArticleLength>;
+  /** One of: general, technical, business, academic, beginner, expert. */
+  audience?: KnownString<ArticleAudience>;
   /** Keywords as one comma-separated string (up to 500 characters). */
   keywords?: string;
   /** How many sections (3-15). */
@@ -66,10 +68,12 @@ export interface ArticleOutlineParams {
 export interface ArticleImproveParams {
   /** The article to improve (100-10,000 characters). */
   content: string;
-  /** What to improve. */
-  improvements?: ArticleImprovement[];
-  tone?: ArticleTone;
-  audience?: ArticleAudience;
+  /** What to improve: any of readability, engagement, seo, structure, grammar, tone, length. */
+  improvements?: KnownString<ArticleImprovement>[];
+  /** One of: professional, casual, friendly, formal, creative, authoritative, conversational. */
+  tone?: KnownString<ArticleTone>;
+  /** One of: general, technical, business, academic, beginner, expert. */
+  audience?: KnownString<ArticleAudience>;
   /**
    * @deprecated The API does not read it, so the SDK does not send it.
    * Use `improvements`, `tone` and `audience`.

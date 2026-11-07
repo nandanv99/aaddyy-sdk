@@ -1,5 +1,5 @@
 import type { AADDYY } from '../client.js';
-import { omit, rename, toBody } from '../params.js';
+import { omit, rename, toBody, type KnownString } from '../params.js';
 
 export type EmailType =
   | 'business' | 'sales_outreach' | 'marketing' | 'newsletter' | 'customer_support' | 'follow_up'
@@ -30,8 +30,13 @@ export interface EmailParams {
   recipientRole?: EmailRecipientRole;
   recipientRelationship?: EmailRecipientRelationship;
   goal?: EmailGoal;
-  tone?: EmailTone;
-  length?: 'short' | 'medium' | 'detailed';
+  /**
+   * One of: formal, semi_formal, friendly, persuasive, polite, enthusiastic,
+   * confident, empathetic, direct.
+   */
+  tone?: KnownString<EmailTone>;
+  /** short, medium or detailed. */
+  length?: KnownString<'short' | 'medium' | 'detailed'>;
   writingStyle?: EmailWritingStyle;
   /** The call to action (up to 200 characters). */
   cta?: string;
@@ -56,7 +61,12 @@ export interface LegacyEmailParams extends Omit<EmailParams, 'topic'> {
 
 /** POST /api/ai/job-email-creator */
 export interface JobEmailParams {
-  emailType: JobEmailType;
+  /**
+   * One of: job_application, follow_up, interview_scheduling,
+   * interview_thank_you, job_inquiry, offer_negotiation, rejection_response,
+   * generic_professional.
+   */
+  emailType: KnownString<JobEmailType>;
   /** The job title (2-200 characters). */
   jobTitle: string;
   /** 2-200 characters. */
@@ -71,7 +81,8 @@ export interface JobEmailParams {
   portfolioUrl?: string;
   /** Anything else the email should say, such as your key skills (up to 1000 characters). */
   customContext?: string;
-  tone?: JobEmailTone;
+  /** One of: formal, neutral, friendly, enthusiastic, confident, humble. */
+  tone?: KnownString<JobEmailTone>;
   /** 1 (casual) to 5 (very formal). */
   formalityLevel?: number;
   emailLength?: 'short' | 'medium' | 'long';

@@ -30,12 +30,14 @@ function aspectRatioForSize(size: unknown): ImageAspectRatio | undefined {
 export interface ImageGenerateParams {
   /** What the image shows (3-2000 characters). */
   prompt: string;
-  aspect_ratio?: ImageAspectRatio;
+  /** One of: 1:1, 16:9, 9:16, 4:3, 3:4. */
+  aspect_ratio?: KnownString<ImageAspectRatio>;
   /** How many images (1-4). Billed per image. */
   num_images?: number;
   /** 0-2147483647. */
   seed?: number;
-  output_format?: 'png' | 'jpeg' | 'webp';
+  /** png, jpeg or webp. */
+  output_format?: KnownString<'png' | 'jpeg' | 'webp'>;
   /** Add style and quality terms to the prompt before the image is made. */
   enhance_prompt?: boolean;
   /**

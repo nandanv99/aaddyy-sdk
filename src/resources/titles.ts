@@ -21,7 +21,8 @@ export interface TitleParams {
   titleType?: KnownString<TitleType>;
   /** One of: professional, casual, urgent, friendly, authoritative, conversational, dramatic. */
   tone?: KnownString<TitleTone>;
-  audience?: TitleAudience;
+  /** One of: general, technical, business, academic, beginner, expert, consumer. */
+  audience?: KnownString<TitleAudience>;
   /** Keywords as one string (up to 200 characters). */
   keywords?: string;
   /** How many titles (1-20). */
@@ -73,8 +74,10 @@ export interface TitleAbTestParams {
   baseTitle?: string;
   /** How many variations (2-20). */
   variationCount?: number;
-  testingDimensions?: TitleTestDimension[];
-  audience?: TitleAudience;
+  /** Any of: emotional, length, format, urgency, specificity, audience, benefit. */
+  testingDimensions?: KnownString<TitleTestDimension>[];
+  /** One of: general, technical, business, academic, beginner, expert, consumer. */
+  audience?: KnownString<TitleAudience>;
   /**
    * @deprecated Use `variationCount`. Sent as `variationCount`; a value outside
    * 2-20 is moved to the nearest end of that range.

@@ -3,7 +3,8 @@
 //
 // 1. Calls in the API's own names compile.
 // 2. 1.0.2 calls that could succeed still compile (old names are deprecated
-//    aliases; fields that were typed `string` still take any string).
+//    aliases; fields that were typed `string` still take any string, and so do
+//    the new choice fields of methods whose 1.0.2 calls could succeed).
 // 3. Calls that miss a field the API requires do not compile: they never
 //    succeeded (the API answered with a validation error).
 
@@ -78,6 +79,32 @@ export async function calls102(): Promise<void> {
   await client.videos.generate({ prompt: 'x', aspect_ratio: '16:9', duration: 5 });
   await client.videos.audioToVideo({ audioUrl: 'x', style: 'y' });
   await client.seo.backlinks({ url: 'example.com' });
+}
+
+export async function stringFields102(): Promise<void> {
+  // 1.0.2 had no type for these fields, so a caller could pass them only
+  // through a variable (no excess-property check), typed `string`. The fields
+  // are now declared, and still take a string.
+  const image = { prompt: 'x', aspect_ratio: someString, output_format: someString };
+  await client.images.generate(image);
+  const outline = { topic: 'x', length: someString, audience: someString, sections: 5 };
+  await client.articles.outline(outline);
+  const improve = { content: 'x', tone: someString, audience: someString, improvements: [someString] };
+  await client.articles.improve(improve);
+  const titles = { topic: 'x', audience: someString };
+  await client.titles.generate(titles);
+  const abTest = { topic: 'x', audience: someString, testingDimensions: [someString] };
+  await client.titles.abTest(abTest);
+  const logo = { keyword: 'x', fontMood: someString, logoTypes: [someString] };
+  await client.logos.create(logo);
+  const problem = { problemText: 'x', solutionFormat: someString };
+  await client.math.solve(problem);
+  await client.physics.solve(problem);
+  // Fields that were typed `string` in 1.0.2 take any string.
+  await client.captions.generate({ imageUrl: 'x', platform: someString, tone: someString });
+  await client.emails.write({ emailType: 'business', topic: 'x', tone: someString, length: someString });
+  await client.emails.jobEmail({ emailType: someString, jobTitle: 'x', companyName: 'y', userName: 'z', tone: someString });
+  await client.videos.eduClip({ topic: 'x', duration: 30, aspectRatio: someString });
 }
 
 export async function missingRequiredFields(): Promise<void> {

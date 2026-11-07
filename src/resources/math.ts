@@ -25,7 +25,8 @@ export interface MathSolveParams {
   explanationLevel?: 'brief' | 'step-by-step' | 'conceptual';
   /** One of: english, spanish, french, hindi, arabic, chinese, custom. */
   language?: KnownString<SolverLanguage>;
-  solutionFormat?: SolutionFormat;
+  /** text, text-latex or pdf. */
+  solutionFormat?: KnownString<SolutionFormat>;
   includeVisualization?: boolean;
   showWorkSteps?: boolean;
 }
