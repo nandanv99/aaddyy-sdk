@@ -31,7 +31,7 @@ src/
     ├── captions.ts       # client.captions.generate(), instagram(V2), linkedin(V2)
     ├── math.ts           # client.math.solve()
     ├── physics.ts        # client.physics.solve()
-    ├── seo.ts            # client.seo.analyze(), backlinks()
+    ├── seo.ts            # client.seo.analyze(); backlinks() rejects: use analyze({ url, includeBacklinks: true })
     ├── keywords.ts       # client.keywords.research()
     ├── headshots.ts      # client.headshots.generate()
     └── synonyms.ts       # client.synonyms.find()
@@ -55,6 +55,7 @@ When a new tool is added to the AADDYY backend:
 ### V1 vs V2
 - **V1 (synchronous)**: `_request('POST', '/ai/...', body)` — returns result immediately
 - **V2 (async)**: `_requestV2('/tool-path', body)` — submits job, polls every 2s until completed (max 600s)
+- Polling (`_poll()`, also used by `videos.eduClip()`): a status request that fails for a passing reason (network error, gateway page, rate limit, 5xx) is retried with a doubling wait (up to 60s); any other error rejects at once. Errors after the job started carry `details.jobId`
 - V2 methods resolve to the job's `result`: the tool's whole response body (`{ success, message, data }`); V1 methods resolve to `data`
 - V2 methods here: upscale-image, watermark-remover, image-prompt-creator, instagram/linkedin post generators (`client.toolV2()` reaches any other tool)
 
@@ -65,6 +66,6 @@ When a new tool is added to the AADDYY backend:
 1. **Zero dependencies** — native fetch only (Node 18+)
 2. **API key from env** — `new AADDYY()` auto-reads `AADDYY_API_KEY`
 3. **TypeScript-first** — full type safety, declaration files emitted
-4. **V2 handled internally** — caller never sees jobId, only final result
+4. **V2 handled internally** — caller gets only the final result; an error raised after the job started carries `details.jobId`
 5. **Typed errors** — InsufficientCreditsError, RateLimitError, AuthenticationError
 6. **User-Agent** — sends `aaddyy-sdk/<package version> node/{version}` for analytics (keep `SDK_VERSION` in `src/client.ts` equal to package.json)

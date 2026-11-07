@@ -50,7 +50,7 @@ const ring = await client.tool('/api/ai/jewelry-designer', {
 const image = await client.toolV2('/nano-banana-2', { prompt: 'a cat astronaut' })
 ```
 
-Tool IDs whose endpoint differs from the ID (for example `ai-title-generator` → `/api/ai/article-title`) are mapped for you. Browse tool IDs, parameters, and prices at [backend.aaddyy.com/llms.txt](https://backend.aaddyy.com/llms.txt) or the [OpenAPI spec](https://backend.aaddyy.com/openapi.json).
+Tool IDs whose endpoint differs from the ID are mapped for you: for example `ai-title-generator` → `/api/ai/article-title`, and `link-in-bio` → `/api/profiles` (V1 only). A catalog `endpoint` such as `/api/ai/essay-writer` works as it is. Browse tool IDs, parameters, and prices at [backend.aaddyy.com/llms.txt](https://backend.aaddyy.com/llms.txt) or the [OpenAPI spec](https://backend.aaddyy.com/openapi.json).
 
 ## Typed Resources
 
@@ -65,10 +65,10 @@ client.articles.improve({ content*, improvements, tone })
 client.essays.write({ topic*, wordCount*, essayType, academicLevel })
 client.emails.write({ emailType*, topic*, tone, length })
 client.emails.jobEmail({ emailType*, jobTitle*, companyName*, userName* })
-client.titles.generate({ topic*, quantity, tone, titleType })
-client.titles.seo({ topic*, primaryKeyword*, quantity })
-client.titles.abTest({ topic*, variationCount, baseTitle })
-client.titles.competitive({ topic*, competitorTitles* })
+client.titles.generate({ topic*, quantity, tone, audience })
+client.titles.seo({ topic*, primaryKeyword* })          // primaryKeyword is also sent as keywords
+client.titles.abTest({ topic*, variationCount, baseTitle })   // see the note below
+client.titles.competitive({ topic*, competitorTitles* })      // see the note below
 client.synonyms.find({ topic*, similarWordsCount* })
 
 // Images
@@ -92,12 +92,13 @@ client.math.solve({ problemText | problemImage, explanationLevel })
 client.physics.solve({ problemText | problemImage, explanationLevel })
 
 // SEO (V1)
-client.seo.analyze({ url*, includeBacklinks })
-client.seo.backlinks({ url* })
+client.seo.analyze({ url*, includeBacklinks })    // includeBacklinks adds the site's backlinks
 client.keywords.research({ keyword* })
 ```
 
 The parameter types (`ArticleParams`, `EduClipParams`, ...) are exported; each field's type and doc comment give its accepted values.
+
+`titles.abTest()` and `titles.competitive()` send what the API validates, but they have not been checked against the live API. If one fails with `SERVICE_ERROR`, use `titles.generate()`.
 
 ### What each call resolves to
 
@@ -116,9 +117,16 @@ const video = await fetch(`https://backend.aaddyy.com${clip.download_url}`, {
 })
 ```
 
-### Switched-off tools
+`eduClip()` checks `duration` before it sends anything: a value other than 15, 30, 45 or 60 rejects with `VALIDATION_ERROR`.
 
-`client.videos.generate()` and `client.videos.audioToVideo()` call tools that are switched off. They reject with an `AADDYYError` whose `code` is `TOOL_UNAVAILABLE`, without sending a request. For text-to-video, call the Seedance Video Generator with `client.toolV2()`; its parameters are in the live catalog.
+While a V2 job or a clip runs, a status request that fails for a passing reason (a network error, a gateway page, a rate limit, a server error) is sent again, after a longer wait each time (up to 60 seconds). Once the job has started, every error the call rejects with carries `details.jobId`, and its message names the status URL, so you can still collect the result.
+
+### Methods that reject without a request
+
+These methods stay in the package, so code that calls them still compiles. They reject with an `AADDYYError` whose `code` is `TOOL_UNAVAILABLE`, and send no request:
+
+- `client.videos.generate()` and `client.videos.audioToVideo()`: their tools are switched off. For text-to-video, call the Seedance Video Generator with `client.toolV2()`; its parameters are in the live catalog.
+- `client.seo.backlinks()`: call `client.seo.analyze({ url, includeBacklinks: true })` instead. Its result has a `backlinks` section with the same fields.
 
 ### Upgrading from 1.0.2
 
@@ -139,13 +147,15 @@ const video = await fetch(`https://backend.aaddyy.com${clip.download_url}`, {
 | `captions.linkedin` | `topic` | `postIdea` |
 | `headshots.generate` | `background` | `background_style` |
 | `articles.generate` | `keywords: string[]` | `keywords`, joined with `", "` |
-| `articles.outline` | `sections` | `sectionsCount` |
-| `titles.generate`, `titles.seo` | `count` | `quantity` |
+| `articles.outline` | `sections` | `sectionsCount`, moved into 3-15 |
+| `titles.generate`, `titles.seo` | `count` | `quantity`, moved into 1-20 |
 | `titles.seo` | `keywords` | `keywords` and `primaryKeyword` |
-| `titles.abTest` | `count` | `variationCount` |
+| `titles.abTest` | `count` | `variationCount`, moved into 2-20 |
 | `titles.competitive` | `competitors` | `competitorTitles` |
 
-Fields the API does not read (for example `language` on `articles.generate`, `skills` on `emails.jobEmail`, `style` and `gender` on `headshots.generate`) are no longer sent. See [CHANGELOG.md](./CHANGELOG.md) for the full list.
+"Moved into 3-15" means that a value outside the range the API accepts is sent as the nearest end of it (`sections: 20` is sent as `sectionsCount: 15`). 1.0.2 sent these under names the API ignored, so any value worked; the API checks the new names.
+
+Fields the API does not read (for example `language` on `articles.generate`, `skills` on `emails.jobEmail`, `style` and `gender` on `headshots.generate`) are no longer sent. A `videos.generate()` call that worked with 1.0.2 now rejects (see above). See [CHANGELOG.md](./CHANGELOG.md) for the full list.
 
 ## Error Handling
 
@@ -166,7 +176,9 @@ try {
 }
 ```
 
-Codes the SDK sets itself: `TOOL_UNAVAILABLE` (a switched-off tool), `JOB_FAILED` (an educational clip failed, or a V2 job failed without a code of its own), `JOB_TIMEOUT` (still running when the SDK stopped waiting; `details.jobId` names the job), and `BAD_RESPONSE` (the API answered with something other than JSON). A failed V2 job keeps the tool's own code, such as `VALIDATION_ERROR`.
+`RateLimitError` covers a 429, and also the 401 the API sends when an API key is over its request limit (`Rate limit exceeded: requests per minute`).
+
+Codes the SDK sets itself: `TOOL_UNAVAILABLE` (a method that sends no request; see above), `VALIDATION_ERROR` (also an `eduClip()` duration the API does not accept), `JOB_FAILED` (an educational clip failed, or a V2 job failed without a code of its own), `JOB_TIMEOUT` (still running when the SDK stopped waiting), and `BAD_RESPONSE` (the API answered with something other than JSON). A failed V2 job keeps the tool's own code, such as `VALIDATION_ERROR`. Every error raised after a job has started carries `details.jobId`.
 
 ## Pricing
 

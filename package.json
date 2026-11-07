@@ -5,8 +5,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
     "test": "npm run build && tsc -p test/tsconfig.json && node --test test/*.test.js",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test",
     "dev": "npx tsx src/index.ts"
   },
   "keywords": [
