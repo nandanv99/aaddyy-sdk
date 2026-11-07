@@ -6,6 +6,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && tsc -p test/tsconfig.json && node --test test/*.test.js",
     "dev": "npx tsx src/index.ts"
   },
   "keywords": [
