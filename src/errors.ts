@@ -91,17 +91,26 @@ export function errorFromBody(status: number, body: Record<string, unknown>): AA
 export const CATALOG_URL = 'https://backend.aaddyy.com/api/documentation/tools';
 
 /**
- * The error a method rejects with, before any request, when its tool is
- * switched off. Internal.
+ * The error a method rejects with, before any request, when the SDK does not
+ * call the method's endpoint. Internal.
  */
-export function toolUnavailable(method: string, tool: string): AADDYYError {
+export function methodUnavailable(method: string, reason: string): AADDYYError {
   return new AADDYYError({
     error: {
-      message: `${method} is unavailable: the ${tool} tool is switched off, so the SDK does not call it. ` +
-        `The live catalog lists the tools you can call: ${CATALOG_URL}`,
+      message: `${method} is unavailable: ${reason}`,
       code: 'TOOL_UNAVAILABLE',
       statusCode: 410,
       details: { method },
     },
   });
+}
+
+/**
+ * The error a method rejects with, before any request, when its tool is
+ * switched off. Internal.
+ */
+export function toolUnavailable(method: string, tool: string): AADDYYError {
+  return methodUnavailable(method,
+    `the ${tool} tool is switched off, so the SDK does not call it. ` +
+    `The live catalog lists the tools you can call: ${CATALOG_URL}`);
 }

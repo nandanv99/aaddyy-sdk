@@ -35,7 +35,6 @@ export async function apiNames(): Promise<void> {
   await client.math.solve({ problemText: '2x + 3 = 11', problemCategory: 'other' });
   await client.physics.solve({ problemText: 'A ball falls 20 m', problemCategory: 'relativity' });
   await client.seo.analyze({ url: 'example.com' });
-  await client.seo.backlinks({ url: 'example.com' });
   await client.synonyms.find({ topic: 'happy', similarWordsCount: 5 });
   await client.titles.generate({ topic: 'Remote work', quantity: 5 });
   await client.titles.seo({ topic: 'Remote work', primaryKeyword: 'remote work' });
@@ -75,9 +74,10 @@ export async function calls102(): Promise<void> {
   await client.headshots.generate({ image_url: 'x', style: 'studio', gender: 'any', background: 'clean' });
   await client.captions.generate({ imageUrl: 'x', topic: 'summer', count: 2 });
   await client.emails.jobEmail({ emailType: 'follow_up', jobTitle: 'x', companyName: 'y', userName: 'z', skills: ['a'] });
-  // Switched off: still compile, reject at run time.
+  // Unavailable: still compile, reject at run time.
   await client.videos.generate({ prompt: 'x', aspect_ratio: '16:9', duration: 5 });
   await client.videos.audioToVideo({ audioUrl: 'x', style: 'y' });
+  await client.seo.backlinks({ url: 'example.com' });
 }
 
 export async function missingRequiredFields(): Promise<void> {

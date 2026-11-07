@@ -6,7 +6,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { ok, v2, requestsOf } = require('./helpers.js');
+const { AADDYYError } = require('../dist/index.js');
+const { ok, v2, requestsOf, withStub, PROVIDER_NAMES } = require('./helpers.js');
 
 const v1 = () => ok({ ok: true });
 const ARTICLE = 'AI changes how small clinics book patients. '.repeat(3);
@@ -156,9 +157,7 @@ const cases = [
   ['seo.analyze: typical call', v1,
     (c) => c.seo.analyze({ url: 'example.com', includeBacklinks: true }),
     [['POST', '/ai/seo-analysis', { url: 'example.com', includeBacklinks: true }]]],
-  ['seo.backlinks: url goes in the query string, where the API reads it', v1,
-    (c) => c.seo.backlinks({ url: 'https://example.com/a?b=c&d=e' }),
-    [['POST', '/ai/seo-analysis/backlinks', { url: 'https://example.com/a?b=c&d=e' }, { url: 'https://example.com/a?b=c&d=e' }]]],
+  // seo.backlinks rejects before any request: see its own test below.
 
   // ── synonyms ──────────────────────────────────────────────────────────────
   ['synonyms.find: typical call', v1,
@@ -206,10 +205,28 @@ test('the API name wins when a call sets both the old and the new name', async (
   assert.deepEqual(sent[0], ['POST', '/v2/ai/upscale-image', { image_url: 'https://example.com/new.jpg' }]);
 });
 
+test('seo.backlinks rejects with TOOL_UNAVAILABLE, points to seo.analyze, and sends no request', async () => {
+  // The API's backlinks route does not charge for the paid data it fetches;
+  // seo.analyze({ url, includeBacklinks: true }) returns the same `backlinks` data.
+  await withStub(() => ok({}), async (client, calls) => {
+    await assert.rejects(client.seo.backlinks({ url: 'example.com' }), (err) => {
+      assert.ok(err instanceof AADDYYError);
+      assert.equal(err.code, 'TOOL_UNAVAILABLE');
+      assert.equal(err.statusCode, 410);
+      assert.deepEqual(err.details, { method: 'seo.backlinks()' });
+      assert.ok(err.message.startsWith('seo.backlinks() is unavailable: '), err.message);
+      assert.ok(err.message.includes('seo.analyze({ url, includeBacklinks: true })'), err.message);
+      assert.doesNotMatch(err.message, PROVIDER_NAMES);
+      return true;
+    });
+    assert.equal(calls.length, 0);
+  });
+});
+
 test('a call without a parameters object sends {}, so the API answers with its validation error', async () => {
   for (const [path, call] of [
     ['/ai/keyword-researcher', (c) => c.keywords.research()],
-    ['/ai/seo-analysis/backlinks', (c) => c.seo.backlinks()],
+    ['/ai/synonym-finder', (c) => c.synonyms.find()],
     ['/ai/math-solver', (c) => c.math.solve()],
   ]) {
     const sent = await requestsOf(v1, call);
@@ -233,8 +250,8 @@ test('every resource method is covered by a case above', () => {
   const { AADDYY } = require('../dist/index.js');
   const client = new AADDYY({ apiKey: 'aip_test_key' });
   const covered = new Set(cases.map(([name]) => name.split(':')[0]));
-  // Covered in videos.test.js.
-  for (const m of ['videos.generate', 'videos.audioToVideo', 'videos.eduClip']) covered.add(m);
+  // Covered in videos.test.js, and by the seo.backlinks test above.
+  for (const m of ['videos.generate', 'videos.audioToVideo', 'videos.eduClip', 'seo.backlinks']) covered.add(m);
   const all = [];
   for (const [resource, value] of Object.entries(client)) {
     if (!value || typeof value !== 'object') continue;
