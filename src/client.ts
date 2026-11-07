@@ -5,10 +5,8 @@
 
 import {
   AADDYYError,
-  InsufficientCreditsError,
-  RateLimitError,
   AuthenticationError,
-  EmailVerificationError,
+  errorFromBody,
 } from './errors.js';
 
 import { Articles } from './resources/articles.js';
@@ -40,6 +38,25 @@ export interface ApiResponse<T = unknown> {
 }
 
 const SDK_VERSION = '1.0.0';
+
+/**
+ * Catalog tool ids whose endpoint is not /ai/<the id without "ai-">.
+ * Every other id maps by dropping the "ai-" prefix.
+ */
+const TOOL_ID_PATHS: Readonly<Record<string, string>> = {
+  'ai-article-generator': 'article',
+  'ai-title-generator': 'article-title',
+  'ai-content-curator': 'content-curator/analyze',
+  'ai-detector': 'ai-detector',
+  'ai-image-generator': 'image-generation',
+  'ai-tshirt-designer': 't-shirt-designer',
+};
+
+/** The tool's path under /ai/ (no leading slash) for a catalog tool id or slug. */
+function slugForToolId(tool: string): string {
+  if (Object.prototype.hasOwnProperty.call(TOOL_ID_PATHS, tool)) return TOOL_ID_PATHS[tool];
+  return tool.replace(/^ai-/, '');
+}
 
 export class AADDYY {
   private readonly apiKey: string;
@@ -88,34 +105,65 @@ export class AADDYY {
   }
 
   /**
-   * Call any AADDYY tool by its endpoint path or tool ID.
-   * Use this for tools that don't have a dedicated resource method.
+   * Call any AADDYY tool synchronously (V1) by its tool ID, slug or endpoint path.
+   * Use this for tools that don't have a dedicated resource method. Read the
+   * tool's parameters from the live catalog.
    *
    * @example
-   * // By endpoint path
-   * await client.tool('/ai/jewelry-designer', { keyword: 'diamond ring' })
+   * // By tool ID (ai-qr-code-generator → POST /ai/qr-code-generator)
+   * await client.tool('ai-qr-code-generator', { content: 'https://www.aaddyy.com' })
    *
-   * // By tool ID (auto-resolves to /ai/{id})
-   * await client.tool('ai-jewelry-designer', { keyword: 'diamond ring' })
+   * // By endpoint path, as the catalog's `endpoint` field gives it
+   * await client.tool('/api/ai/jewelry-designer', {
+   *   jewelry_type: 'ring', design_style: 'classic', material: 'gold_yellow',
+   * })
    */
   async tool(toolPath: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    const path = toolPath.startsWith('/') ? toolPath : `/ai/${toolPath.replace(/^ai-/, '')}`;
-    return this._request('POST', path, params);
+    return this._request('POST', this.v1PathFor(toolPath), params);
   }
 
   /**
-   * Call any V2 (async) tool by its path. Handles submit + poll automatically.
+   * Call any V2 (async) tool by its tool ID, slug or path. Handles submit + poll
+   * automatically and resolves to the job's `result`: the tool's whole response
+   * body, `{ success, message, data }`.
    *
    * @example
    * await client.toolV2('/nano-banana-2', { prompt: 'a cat' })
+   * await client.toolV2('ai-nano-banana-2', { prompt: 'a cat' })
    */
   async toolV2(toolPath: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    const path = toolPath.startsWith('/') ? toolPath : `/${toolPath.replace(/^ai-/, '')}`;
-    return this._requestV2(path, params);
+    return this._requestV2(this.v2PathFor(toolPath), params);
   }
 
   /**
-   * Make an authenticated API request.
+   * The V1 path relative to the base URL. A tool ID or slug becomes /ai/<slug>.
+   * A path is kept, without a leading /api when the base URL already ends in /api
+   * (the catalog's `endpoint` field starts with /api).
+   */
+  private v1PathFor(toolPath: string): string {
+    if (!toolPath.startsWith('/')) return `/ai/${slugForToolId(toolPath)}`;
+    return this.withoutApiPrefix(toolPath);
+  }
+
+  /**
+   * The tool path after /v2/ai. Accepts a tool ID, a slug, /<slug>, /ai/<slug>,
+   * /v2/ai/<slug>, and the catalog's /api/ai/<slug> and /api/v2/ai/<slug>.
+   */
+  private v2PathFor(toolPath: string): string {
+    if (!toolPath.startsWith('/')) return `/${slugForToolId(toolPath)}`;
+    let path = this.withoutApiPrefix(toolPath);
+    if (path.startsWith('/v2/')) path = path.slice('/v2'.length);
+    if (path.startsWith('/ai/')) path = path.slice('/ai'.length);
+    return path;
+  }
+
+  private withoutApiPrefix(path: string): string {
+    const baseEndsInApi = /\/api\/?$/.test(this.baseURL);
+    return baseEndsInApi && path.startsWith('/api/') ? path.slice('/api'.length) : path;
+  }
+
+  /**
+   * Make an authenticated API request and return the response's `data`.
    * Used internally by resource classes.
    */
   async _request<T>(method: string, path: string, body?: Record<string, unknown>): Promise<T> {
@@ -130,26 +178,31 @@ export class AADDYY {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    const data: ApiResponse<T> = await res.json() as ApiResponse<T>;
+    let data: ApiResponse<T> | null;
+    try {
+      data = await res.json() as ApiResponse<T> | null;
+    } catch {
+      data = null;
+    }
+    if (!data || typeof data !== 'object') {
+      throw new AADDYYError({
+        message: `Unexpected non-JSON response (HTTP ${res.status})`,
+        code: 'BAD_RESPONSE',
+        statusCode: res.status,
+      });
+    }
 
     if (!data.success) {
-      const raw = data as unknown as Record<string, unknown>;
-      const code = (raw.error as Record<string, unknown>)?.code as string ||
-                   (raw.code as string) || '';
-
-      if (res.status === 401) throw new AuthenticationError();
-      if (res.status === 429) throw new RateLimitError(raw);
-      if (code === 'INSUFFICIENT_CREDITS') throw new InsufficientCreditsError(raw);
-      if (code === 'EMAIL_NOT_VERIFIED') throw new EmailVerificationError();
-      throw new AADDYYError(raw);
+      throw errorFromBody(res.status, data as unknown as Record<string, unknown>);
     }
 
     return data.data;
   }
 
   /**
-   * Make an async V2 API request (submit + poll).
-   * Used internally for video, image editing, and other long-running tools.
+   * Make an async V2 API request (submit + poll) and return the job's `result`:
+   * the tool's whole response body, `{ success, message, data }`.
+   * Used internally for image editing, social posts and other long-running tools.
    */
   async _requestV2<T>(toolPath: string, body: Record<string, unknown>): Promise<T> {
     // Submit job
@@ -162,17 +215,41 @@ export class AADDYY {
     const interval = 2_000;
 
     while (Date.now() - start < timeout) {
-      await new Promise(r => setTimeout(r, interval));
+      await this._sleep(interval);
 
-      const job = await this._request<{ status: string; result: T; error: string | null }>(
+      const job = await this._request<{ status: string; result: T; error: string | null; code?: string | null }>(
         'GET',
         `/v2/ai/jobs/${jobId}`
       );
 
       if (job.status === 'completed') return job.result;
-      if (job.status === 'failed') throw new AADDYYError({ message: job.error || 'Job failed' });
+      if (job.status === 'failed') {
+        // The poll gives the tool's error code (VALIDATION_ERROR,
+        // INSUFFICIENT_CREDITS, ...) but no HTTP status.
+        throw errorFromBody(0, {
+          success: false,
+          error: {
+            message: job.error || 'Job failed',
+            code: job.code || 'JOB_FAILED',
+            details: { jobId },
+          },
+        });
+      }
     }
 
-    throw new AADDYYError({ message: `Job ${jobId} timed out after ${timeout / 1000}s` });
+    throw new AADDYYError({
+      error: {
+        message: `Job ${jobId} timed out after ${timeout / 1000}s. It may still finish: poll GET /api/v2/ai/jobs/${jobId}.`,
+        code: 'JOB_TIMEOUT',
+        details: { jobId },
+      },
+    });
+  }
+
+  /**
+   * Wait between polls. Internal; tests replace it to skip the wait.
+   */
+  _sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

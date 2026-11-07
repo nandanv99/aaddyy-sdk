@@ -23,7 +23,9 @@ export class AADDYYError extends Error {
 }
 
 export class InsufficientCreditsError extends AADDYYError {
+  /** The price of the call, in USD (1 credit = $0.01). 0 when the API did not say. */
   public readonly required: number;
+  /** The account's balance, in USD. 0 when the API did not say. */
   public readonly available: number;
 
   constructor(response: Record<string, unknown>) {
@@ -58,4 +60,39 @@ export class EmailVerificationError extends AADDYYError {
     });
     this.name = 'EmailVerificationError';
   }
+}
+
+/**
+ * The typed error for an API error body. `status` is the HTTP status, or 0
+ * when there is none (a failed V2 job reports only its error code).
+ * Internal: the package exports the error classes, not this function.
+ */
+export function errorFromBody(status: number, body: Record<string, unknown>): AADDYYError {
+  const code = ((body.error as Record<string, unknown> | undefined)?.code as string) ||
+               (body.code as string) || '';
+
+  if (status === 401) return new AuthenticationError();
+  if (status === 429) return new RateLimitError(body);
+  if (code === 'INSUFFICIENT_CREDITS') return new InsufficientCreditsError(body);
+  if (code === 'EMAIL_NOT_VERIFIED') return new EmailVerificationError();
+  return new AADDYYError(body);
+}
+
+/** Where the live tool catalog is. */
+export const CATALOG_URL = 'https://backend.aaddyy.com/api/documentation/tools';
+
+/**
+ * The error a method rejects with, before any request, when its tool is
+ * switched off. Internal.
+ */
+export function toolUnavailable(method: string, tool: string): AADDYYError {
+  return new AADDYYError({
+    error: {
+      message: `${method} is unavailable: the ${tool} tool is switched off, so the SDK does not call it. ` +
+        `The live catalog lists the tools you can call: ${CATALOG_URL}`,
+      code: 'TOOL_UNAVAILABLE',
+      statusCode: 410,
+      details: { method },
+    },
+  });
 }
