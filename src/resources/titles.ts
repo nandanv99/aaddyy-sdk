@@ -1,5 +1,5 @@
 import type { AADDYY } from '../client.js';
-import { rename, toBody, type KnownString } from '../params.js';
+import { rename, renameInRange, toBody, type KnownString } from '../params.js';
 
 export type TitleType = 'clickbait' | 'seo' | 'professional' | 'listicle' | 'how-to' | 'question' | 'news' | 'review';
 export type TitleTone =
@@ -14,7 +14,10 @@ export type TitleTestDimension =
 export interface TitleParams {
   /** What the article is about (3-200 characters). */
   topic: string;
-  /** One of: clickbait, seo, professional, listicle, how-to, question, news, review. */
+  /**
+   * One of: clickbait, seo, professional, listicle, how-to, question, news,
+   * review. The API accepts it, but the titles do not depend on it today.
+   */
   titleType?: KnownString<TitleType>;
   /** One of: professional, casual, urgent, friendly, authoritative, conversational, dramatic. */
   tone?: KnownString<TitleTone>;
@@ -28,13 +31,20 @@ export interface TitleParams {
   includeNumbers?: boolean;
   /** Add an analysis of the titles to the result. */
   includeAnalysis?: boolean;
-  /** @deprecated Use `quantity`. */
+  /**
+   * @deprecated Use `quantity`. Sent as `quantity`; a value outside 1-20 is
+   * moved to the nearest end of that range.
+   */
   count?: number;
 }
 
 /** POST /api/ai/article-title/seo */
 export interface SeoTitleParams extends TitleParams {
-  /** The keyword the titles target (2-50 characters). */
+  /**
+   * The keyword the titles target (2-50 characters). The API's prompt reads the
+   * keyword from `keywords`, so when `keywords` is not set the SDK sends this
+   * value as `keywords` too.
+   */
   primaryKeyword: string;
   /** Up to 5 more keywords, each 2-50 characters. */
   secondaryKeywords?: string[];
@@ -65,7 +75,10 @@ export interface TitleAbTestParams {
   variationCount?: number;
   testingDimensions?: TitleTestDimension[];
   audience?: TitleAudience;
-  /** @deprecated Use `variationCount`. */
+  /**
+   * @deprecated Use `variationCount`. Sent as `variationCount`; a value outside
+   * 2-20 is moved to the nearest end of that range.
+   */
   count?: number;
 }
 
@@ -91,28 +104,38 @@ export class Titles {
   /** Write article titles. V1: resolves to the response's `data`. */
   async generate(params: TitleParams) {
     const body = toBody(params);
-    rename(body, 'count', 'quantity');
+    renameInRange(body, 'count', 'quantity', 1, 20);
     return this.client._request('POST', '/ai/article-title', body);
   }
 
   /** Write SEO titles for a keyword. V1. */
   async seo(params: SeoTitleParams | LegacySeoTitleParams) {
     const body = toBody(params);
-    rename(body, 'count', 'quantity');
-    if (body.primaryKeyword === undefined && typeof body.keywords === 'string') {
+    renameInRange(body, 'count', 'quantity', 1, 20);
+    if (body.primaryKeyword === undefined && typeof body.keywords === 'string' && body.keywords !== '') {
       body.primaryKeyword = body.keywords;
+    }
+    // The API's seo prompt reads the keyword from `keywords` only.
+    if ((body.keywords === undefined || body.keywords === '') && typeof body.primaryKeyword === 'string') {
+      body.keywords = body.primaryKeyword;
     }
     return this.client._request('POST', '/ai/article-title/seo', body);
   }
 
-  /** Write title variations to A/B test. V1. */
+  /**
+   * Write title variations to A/B test. V1. Not checked against the live API:
+   * if it fails with SERVICE_ERROR, use `titles.generate()`.
+   */
   async abTest(params: TitleAbTestParams) {
     const body = toBody(params);
-    rename(body, 'count', 'variationCount');
+    renameInRange(body, 'count', 'variationCount', 2, 20);
     return this.client._request('POST', '/ai/article-title/abtest', body);
   }
 
-  /** Compare titles with competitors' titles. V1. */
+  /**
+   * Compare titles with competitors' titles. V1. Not checked against the live
+   * API: if it fails with SERVICE_ERROR, use `titles.generate()`.
+   */
   async competitive(params: TitleCompetitiveParams | LegacyTitleCompetitiveParams) {
     const body = toBody(params);
     rename(body, 'competitors', 'competitorTitles');

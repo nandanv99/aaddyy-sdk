@@ -1,5 +1,5 @@
 import type { AADDYY } from '../client.js';
-import { omit, rename, toBody, type Body, type KnownString } from '../params.js';
+import { omit, renameInRange, toBody, type Body, type KnownString } from '../params.js';
 
 export type ArticleLength = 'short' | 'medium' | 'long';
 export type ArticleTone =
@@ -39,7 +39,10 @@ export interface SpecializedArticleParams extends Omit<ArticleParams, 'articleTy
   articleType: KnownString<ArticleType>;
 }
 
-/** POST /api/ai/article/outline */
+/**
+ * POST /api/ai/article/outline. The API accepts and checks every field here,
+ * but today the outline depends only on `topic`.
+ */
 export interface ArticleOutlineParams {
   /** What the article is about (3-200 characters). */
   topic: string;
@@ -49,11 +52,17 @@ export interface ArticleOutlineParams {
   keywords?: string;
   /** How many sections (3-15). */
   sectionsCount?: number;
-  /** @deprecated Use `sectionsCount`. */
+  /**
+   * @deprecated Use `sectionsCount`. Sent as `sectionsCount`; a value outside
+   * 3-15 is moved to the nearest end of that range.
+   */
   sections?: number;
 }
 
-/** POST /api/ai/article/improve */
+/**
+ * POST /api/ai/article/improve. The API accepts and checks every field here,
+ * but today the result depends only on `content` and `tone`.
+ */
 export interface ArticleImproveParams {
   /** The article to improve (100-10,000 characters). */
   content: string;
@@ -91,7 +100,7 @@ export class Articles {
   /** Outline an article. V1. */
   async outline(params: ArticleOutlineParams) {
     const body = toBody(params);
-    rename(body, 'sections', 'sectionsCount');
+    renameInRange(body, 'sections', 'sectionsCount', 3, 15);
     return this.client._request('POST', '/ai/article/outline', body);
   }
 

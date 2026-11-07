@@ -31,6 +31,26 @@ export function rename(body: Body, from: string, to: string): void {
   delete body[from];
 }
 
+/**
+ * Send a 1.0.2 number field under its API name, inside the range the API
+ * validates. 1.0.2 sent the old name, which the API ignored, so any value
+ * worked; the API name is validated. A value outside the range is moved to the
+ * nearest end of it, a fraction is rounded, and a value that is not a number is
+ * not sent. When the caller set both names, the API name wins and is sent as
+ * given. The old name is never sent.
+ */
+export function renameInRange(body: Body, from: string, to: string, min: number, max: number): void {
+  if (!(from in body)) return;
+  const value = body[from];
+  delete body[from];
+  if (body[to] !== undefined) return;
+  const n = typeof value === 'number' ? value
+    : typeof value === 'string' && value.trim() !== '' ? Number(value)
+    : NaN;
+  if (!Number.isFinite(n)) return;
+  body[to] = Math.min(max, Math.max(min, Math.round(n)));
+}
+
 /** Remove fields the API does not read. */
 export function omit(body: Body, ...keys: string[]): void {
   for (const key of keys) delete body[key];
