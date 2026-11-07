@@ -6,6 +6,7 @@
 import {
   AADDYYError,
   AuthenticationError,
+  RateLimitError,
   errorFromBody,
 } from './errors.js';
 
@@ -57,6 +58,47 @@ const TOOL_ID_PATHS: Readonly<Record<string, string>> = {
 function slugForToolId(tool: string): string {
   if (Object.prototype.hasOwnProperty.call(TOOL_ID_PATHS, tool)) return TOOL_ID_PATHS[tool];
   return tool.replace(/^ai-/, '');
+}
+
+/** V2 jobs: the wait between polls, and how long to poll. */
+const V2_POLL_MS = 2_000;
+const V2_TIMEOUT_MS = 600_000;
+
+/** The longest wait between two polls, after polls that failed. */
+const MAX_POLL_WAIT_MS = 60_000;
+
+/**
+ * Add the job id and its status request to an error raised after the job
+ * started: the job may still finish, and the caller can still collect it.
+ */
+function withJob(err: AADDYYError, jobId: string, statusRequest: string): AADDYYError {
+  const writable = err as unknown as { details?: Record<string, unknown>; message: string };
+  writable.details = { ...(err.details ?? {}), jobId };
+  writable.message = `${err.message} Job ${jobId} had started; check it with ${statusRequest}.`;
+  return err;
+}
+
+/**
+ * Whether a failed status request is worth repeating: a network error, a reply
+ * that is not JSON (a gateway page), a rate limit, or a server error. The job
+ * itself is not affected by these, and polling it again is free.
+ */
+function isPassingPollError(err: unknown): boolean {
+  if (!(err instanceof AADDYYError)) return true; // fetch itself failed
+  if (err instanceof RateLimitError || err.code === 'BAD_RESPONSE') return true;
+  return err.statusCode === 429 || err.statusCode >= 500;
+}
+
+/** Options for AADDYY._poll(). Internal. */
+export interface PollOptions<J> {
+  /** The wait before each status request, in ms. */
+  intervalMs: number;
+  /** How long to poll, in ms, before rejecting with JOB_TIMEOUT. */
+  timeoutMs: number;
+  /** True when the job has finished, whether it succeeded or failed. */
+  isDone: (job: J) => boolean;
+  /** The start of the JOB_TIMEOUT message, such as 'Job abc did not finish within 600 s.' */
+  timeoutMessage: string;
 }
 
 export class AADDYY {
@@ -206,41 +248,74 @@ export class AADDYY {
    * Used internally for image editing, social posts and other long-running tools.
    */
   async _requestV2<T>(toolPath: string, body: Record<string, unknown>): Promise<T> {
-    // Submit job
-    const submitData = await this._request<{ jobId: string }>('POST', `/v2/ai${toolPath}`, body);
-    const { jobId } = submitData;
+    const submitted = await this._request<{ jobId?: string } | null>('POST', `/v2/ai${toolPath}`, body);
+    if (!submitted || !submitted.jobId) {
+      throw new AADDYYError({ error: { message: 'The job was not started: the response has no jobId.', code: 'BAD_RESPONSE' } });
+    }
+    const jobId = String(submitted.jobId);
 
-    // Poll until completed or failed (max 600s)
+    type V2Job = { status: string; result: T; error: string | null; code?: string | null };
+    const job = await this._poll<V2Job>(`/v2/ai/jobs/${encodeURIComponent(jobId)}`, jobId, {
+      intervalMs: V2_POLL_MS,
+      timeoutMs: V2_TIMEOUT_MS,
+      isDone: (j) => j.status === 'completed' || j.status === 'failed',
+      timeoutMessage: `Job ${jobId} did not finish within ${V2_TIMEOUT_MS / 1000} s.`,
+    });
+
+    if (job.status === 'failed') {
+      // The poll gives the tool's error code (VALIDATION_ERROR,
+      // INSUFFICIENT_CREDITS, ...) but no HTTP status.
+      throw errorFromBody(0, {
+        success: false,
+        error: {
+          message: job.error || 'Job failed',
+          code: job.code || 'JOB_FAILED',
+          details: { jobId },
+        },
+      });
+    }
+    return job.result;
+  }
+
+  /**
+   * Poll a job that has started: GET `path` until `isDone(job)`, then resolve
+   * to that job. Waits `intervalMs` before each status request. A status
+   * request that fails for a passing reason (network error, gateway page, rate
+   * limit, server error) is sent again after a longer wait (doubled each time,
+   * up to 60 s), until `timeoutMs` has passed; then the call rejects with
+   * JOB_TIMEOUT. Any other error (401, 403, 404, ...) rejects at once. Each
+   * rejection carries `details.jobId` and the status URL, because the job may
+   * still finish and the caller can still collect it. Internal.
+   */
+  async _poll<J>(path: string, jobId: string, options: PollOptions<J>): Promise<J> {
+    const { intervalMs, timeoutMs, isDone, timeoutMessage } = options;
+    const statusRequest = `GET ${this.baseURL}${this.withoutApiPrefix(path)}`;
     const start = Date.now();
-    const timeout = 600_000;
-    const interval = 2_000;
+    let wait = intervalMs;
+    let lastError: unknown;
 
-    while (Date.now() - start < timeout) {
-      await this._sleep(interval);
-
-      const job = await this._request<{ status: string; result: T; error: string | null; code?: string | null }>(
-        'GET',
-        `/v2/ai/jobs/${jobId}`
-      );
-
-      if (job.status === 'completed') return job.result;
-      if (job.status === 'failed') {
-        // The poll gives the tool's error code (VALIDATION_ERROR,
-        // INSUFFICIENT_CREDITS, ...) but no HTTP status.
-        throw errorFromBody(0, {
-          success: false,
-          error: {
-            message: job.error || 'Job failed',
-            code: job.code || 'JOB_FAILED',
-            details: { jobId },
-          },
-        });
+    while (Date.now() - start < timeoutMs) {
+      await this._sleep(wait);
+      let job: J;
+      try {
+        job = await this._request<J>('GET', path);
+      } catch (err) {
+        if (!isPassingPollError(err)) throw withJob(err as AADDYYError, jobId, statusRequest);
+        lastError = err;
+        wait = Math.min(wait * 2, MAX_POLL_WAIT_MS);
+        continue;
       }
+      lastError = undefined;
+      wait = intervalMs;
+      if (job && typeof job === 'object' && isDone(job)) return job;
     }
 
+    const lastFailure = lastError instanceof Error
+      ? ` The last status request failed: ${lastError.message}`
+      : '';
     throw new AADDYYError({
       error: {
-        message: `Job ${jobId} timed out after ${timeout / 1000}s. It may still finish: poll GET /api/v2/ai/jobs/${jobId}.`,
+        message: `${timeoutMessage} It may still finish: poll ${statusRequest}.${lastFailure}`,
         code: 'JOB_TIMEOUT',
         details: { jobId },
       },

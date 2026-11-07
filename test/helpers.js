@@ -20,16 +20,19 @@ function v2(job = { status: 'completed', result: { success: true, message: 'done
 
 /**
  * Run `fn` with a client whose requests go to `respond(call)`. Each request is
- * recorded in `calls` as { method, path, query, headers, body }, where `path`
- * is relative to the base URL (no /api) and `body` is the parsed JSON body.
+ * recorded in `calls` as { method, url, path, query, headers, body }, where
+ * `url` is the full URL, `path` is relative to the base URL (no /api) and
+ * `body` is the parsed JSON body. A `respond` that throws makes fetch reject,
+ * as a network error does. `options.baseURL` replaces the test base URL.
  */
-async function withStub(respond, fn) {
+async function withStub(respond, fn, options = {}) {
   const calls = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const call = {
       method: init.method,
+      url: String(input),
       path: url.pathname.replace(/^\/api/, ''),
       query: Object.fromEntries(url.searchParams),
       headers: init.headers,
@@ -43,7 +46,7 @@ async function withStub(respond, fn) {
     });
   };
   try {
-    const client = new AADDYY({ apiKey: 'aip_test_key', baseURL: BASE_URL });
+    const client = new AADDYY({ apiKey: 'aip_test_key', baseURL: options.baseURL || BASE_URL });
     client._sleep = async () => {};
     await fn(client, calls);
   } finally {
@@ -63,4 +66,31 @@ async function requestsOf(respond, call) {
   return sent;
 }
 
-module.exports = { BASE_URL, ok, v2, withStub, requestsOf };
+/**
+ * Run `fn(sleep, sleeps)` with Date.now() on a fake clock. Set
+ * `client._sleep = sleep`: each wait then moves the clock instead of waiting,
+ * and is recorded in `sleeps` (ms).
+ */
+async function withFakeClock(fn) {
+  const realNow = Date.now;
+  let now = 1_000_000;
+  const sleeps = [];
+  Date.now = () => now;
+  try {
+    await fn(async (ms) => { sleeps.push(ms); now += ms; }, sleeps);
+  } finally {
+    Date.now = realNow;
+  }
+}
+
+/** An API error response, as the backend's res.error() writes it. */
+function apiError(status, code, message, details) {
+  const error = { message, code, statusCode: status };
+  if (details) error.details = details;
+  return { status, body: { success: false, error } };
+}
+
+// Words that name a model or provider. An SDK error must contain none of them.
+const PROVIDER_NAMES = /\b(fal|luma|ray|openai|gpt|gemini|google|claude|anthropic|bytedance|seedance|kling|runway|wan|veo|sora|replicate|minimax|hailuo|pika|elevenlabs|dataforseo)\b/i;
+
+module.exports = { BASE_URL, ok, v2, withStub, requestsOf, withFakeClock, apiError, PROVIDER_NAMES };

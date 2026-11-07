@@ -64,18 +64,27 @@ export class EmailVerificationError extends AADDYYError {
 
 /**
  * The typed error for an API error body. `status` is the HTTP status, or 0
- * when there is none (a failed V2 job reports only its error code).
+ * when there is none (a failed V2 job reports only its error code). A body
+ * without a statusCode of its own (the V2 poll route's 404 and 403 are
+ * `{ success, message }`) gets the HTTP status.
  * Internal: the package exports the error classes, not this function.
  */
 export function errorFromBody(status: number, body: Record<string, unknown>): AADDYYError {
-  const code = ((body.error as Record<string, unknown> | undefined)?.code as string) ||
-               (body.code as string) || '';
+  const error = body.error as Record<string, unknown> | undefined;
+  const code = (error?.code as string) || (body.code as string) || '';
+  const message = (error?.message as string) || (body.message as string) || '';
+  const response = status && !error?.statusCode && !body.statusCode ? { ...body, statusCode: status } : body;
 
+  // An API key over its request limit gets a 401 that says so
+  // ("Rate limit exceeded: requests per minute"). The key itself is valid.
+  if (status === 401 && /^rate limit exceeded/i.test(message)) {
+    return new RateLimitError({ ...response, error: { ...error, code: 'RATE_LIMITED' } });
+  }
   if (status === 401) return new AuthenticationError();
-  if (status === 429) return new RateLimitError(body);
-  if (code === 'INSUFFICIENT_CREDITS') return new InsufficientCreditsError(body);
+  if (status === 429) return new RateLimitError(response);
+  if (code === 'INSUFFICIENT_CREDITS') return new InsufficientCreditsError(response);
   if (code === 'EMAIL_NOT_VERIFIED') return new EmailVerificationError();
-  return new AADDYYError(body);
+  return new AADDYYError(response);
 }
 
 /** Where the live tool catalog is. */

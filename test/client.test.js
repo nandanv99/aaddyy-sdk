@@ -9,7 +9,7 @@ const path = require('node:path');
 const {
   AADDYYError, InsufficientCreditsError, AuthenticationError, RateLimitError,
 } = require('../dist/index.js');
-const { ok, v2, withStub, requestsOf } = require('./helpers.js');
+const { ok, v2, withStub, requestsOf, withFakeClock, apiError } = require('./helpers.js');
 
 const pkg = require(path.join(__dirname, '..', 'package.json'));
 
@@ -66,6 +66,63 @@ test('a V2 job that failed for credits rejects with InsufficientCreditsError', a
   });
 });
 
+const UPSCALED = { success: true, message: 'Image upscaled', data: { imageUrl: 'https://cdn.example.com/out.png' } };
+const V2_STATUS_URL = 'https://api.test/api/v2/ai/jobs/job-1';
+
+test('V2: a status request that fails for a passing reason is sent again, after a longer wait', async () => {
+  const polls = [
+    { status: 502, raw: '<html>Bad gateway</html>' },
+    apiError(401, 'UNAUTHORIZED', 'Rate limit exceeded: requests per minute'),
+    ok({ jobId: 'job-1', status: 'completed', result: UPSCALED, error: null }),
+  ];
+  await withStub((call) => (call.method === 'POST' ? ok({ jobId: 'job-1', status: 'queued' }) : polls.shift()), async (client, calls) => {
+    const waits = [];
+    client._sleep = async (ms) => { waits.push(ms); };
+    assert.deepEqual(await client.images.upscale({ image_url: 'https://example.com/a.jpg' }), UPSCALED);
+    assert.equal(calls.length, 4);
+    assert.deepEqual(waits, [2000, 4000, 8000]);
+  });
+});
+
+test('V2: a 404 from the poll route rejects at once, with its HTTP status and the job id', async () => {
+  // The poll route's 404 has no error object: { success: false, message, data: null }.
+  const gone = { status: 404, body: { success: false, message: 'Job not found. It may have been cleaned up.', data: null } };
+  await withStub((call) => (call.method === 'POST' ? ok({ jobId: 'job-1', status: 'queued' }) : gone), async (client, calls) => {
+    await assert.rejects(client.images.upscale({ image_url: 'https://example.com/a.jpg' }), (err) => {
+      assert.ok(err instanceof AADDYYError);
+      assert.equal(err.statusCode, 404);
+      assert.deepEqual(err.details, { jobId: 'job-1' });
+      assert.equal(err.message, `Job not found. It may have been cleaned up. Job job-1 had started; check it with GET ${V2_STATUS_URL}.`);
+      return true;
+    });
+    assert.equal(calls.length, 2);
+  });
+});
+
+test('V2: a job not finished after 600 s (300 polls, 2 s apart) rejects with JOB_TIMEOUT and the job id', async () => {
+  await withFakeClock(async (sleep, sleeps) => {
+    await withStub(v2({ status: 'active', result: null }), async (client, calls) => {
+      client._sleep = sleep;
+      await assert.rejects(client.images.upscale({ image_url: 'https://example.com/a.jpg' }), (err) => {
+        assert.ok(err instanceof AADDYYError);
+        assert.equal(err.code, 'JOB_TIMEOUT');
+        assert.deepEqual(err.details, { jobId: 'job-1' });
+        assert.equal(err.message, `Job job-1 did not finish within 600 s. It may still finish: poll GET ${V2_STATUS_URL}.`);
+        return true;
+      });
+      assert.equal(calls.filter((c) => c.method === 'GET').length, 300);
+      assert.ok(sleeps.every((ms) => ms === 2000));
+    });
+  });
+});
+
+test('V2: a submit response without jobId rejects with BAD_RESPONSE and polls nothing', async () => {
+  await withStub(() => ok({ status: 'queued' }), async (client, calls) => {
+    await assert.rejects(client.images.upscale({ image_url: 'https://example.com/a.jpg' }), { code: 'BAD_RESPONSE' });
+    assert.equal(calls.length, 1);
+  });
+});
+
 test('a failed V2 job without a code rejects with JOB_FAILED', async () => {
   await withStub(v2({ status: 'failed', result: null, error: null, code: null }), async (client) => {
     await assert.rejects(client.images.upscale({ image_url: 'https://example.com/a.jpg' }), { code: 'JOB_FAILED', message: 'Job failed' });
@@ -103,6 +160,23 @@ test('401 and 429 reject with AuthenticationError and RateLimitError', async () 
   });
   await withStub(() => ({ status: 429, body: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } } }), async (client) => {
     await assert.rejects(client.seo.analyze({ url: 'example.com' }), RateLimitError);
+  });
+});
+
+test('a 401 that says the key is over its request limit rejects with RateLimitError', async () => {
+  await withStub(() => apiError(401, 'UNAUTHORIZED', 'Rate limit exceeded: requests per minute'), async (client) => {
+    await assert.rejects(client.seo.analyze({ url: 'example.com' }), (err) => {
+      assert.ok(err instanceof RateLimitError);
+      assert.equal(err.code, 'RATE_LIMITED');
+      assert.equal(err.message, 'Rate limit exceeded: requests per minute');
+      return true;
+    });
+  });
+});
+
+test('an error body without a statusCode of its own gets the HTTP status', async () => {
+  await withStub(() => ({ status: 403, body: { success: false, message: 'Access denied', data: null } }), async (client) => {
+    await assert.rejects(client.seo.analyze({ url: 'example.com' }), { statusCode: 403, message: 'Access denied' });
   });
 });
 
