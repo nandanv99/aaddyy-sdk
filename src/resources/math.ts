@@ -36,7 +36,7 @@ export class Math {
   /** Solve a math problem. V1: resolves to the response's `data`. */
   async solve(params: MathSolveParams) {
     const body = toBody(params);
-    body.inputType = params.inputType || (params.problemImage ? 'image' : 'text');
+    body.inputType = body.inputType || (body.problemImage ? 'image' : 'text');
     return this.client._request('POST', '/ai/math-solver', body);
   }
 }

@@ -12,10 +12,10 @@ export type KnownString<T extends string> = T | (string & {});
 
 export type Body = Record<string, unknown>;
 
-/** A shallow copy of the caller's parameters, without undefined values. */
-export function toBody(params: object): Body {
+/** A shallow copy of the caller's parameters, without undefined values. A missing object is {}. */
+export function toBody(params: object | null | undefined): Body {
   const body: Body = {};
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, value] of Object.entries(params ?? {})) {
     if (value !== undefined) body[key] = value;
   }
   return body;

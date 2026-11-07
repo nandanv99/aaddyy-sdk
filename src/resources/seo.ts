@@ -30,7 +30,7 @@ export class SEO {
    */
   async backlinks(params: SeoBacklinksParams) {
     const body = toBody(params);
-    const query = typeof params.url === 'string' ? `?url=${encodeURIComponent(params.url)}` : '';
+    const query = typeof body.url === 'string' ? `?url=${encodeURIComponent(body.url)}` : '';
     return this.client._request('POST', `/ai/seo-analysis/backlinks${query}`, body);
   }
 }

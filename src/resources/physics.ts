@@ -35,7 +35,7 @@ export class Physics {
   /** Solve a physics problem. V1: resolves to the response's `data`. */
   async solve(params: PhysicsSolveParams) {
     const body = toBody(params);
-    body.inputType = params.inputType || (params.problemImage ? 'image' : 'text');
+    body.inputType = body.inputType || (body.problemImage ? 'image' : 'text');
     return this.client._request('POST', '/ai/physics-solver', body);
   }
 }

@@ -206,6 +206,18 @@ test('the API name wins when a call sets both the old and the new name', async (
   assert.deepEqual(sent[0], ['POST', '/v2/ai/upscale-image', { image_url: 'https://example.com/new.jpg' }]);
 });
 
+test('a call without a parameters object sends {}, so the API answers with its validation error', async () => {
+  for (const [path, call] of [
+    ['/ai/keyword-researcher', (c) => c.keywords.research()],
+    ['/ai/seo-analysis/backlinks', (c) => c.seo.backlinks()],
+    ['/ai/math-solver', (c) => c.math.solve()],
+  ]) {
+    const sent = await requestsOf(v1, call);
+    assert.equal(sent[0][1], path);
+    assert.deepEqual(sent[0][2], path === '/ai/math-solver' ? { inputType: 'text' } : {});
+  }
+});
+
 test("a method does not change the caller's parameters", async () => {
   const params = { word: 'happy', count: 5, context: 'card' };
   await requestsOf(v1, (c) => c.synonyms.find(params));
