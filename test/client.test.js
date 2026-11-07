@@ -203,6 +203,7 @@ test('tool(): tool IDs whose endpoint differs from the ID map to their catalog e
     'ai-detector': '/ai/ai-detector',
     'ai-image-generator': '/ai/image-generation',
     'ai-tshirt-designer': '/ai/t-shirt-designer',
+    'link-in-bio': '/profiles',
   };
   for (const [id, endpoint] of Object.entries(expected)) {
     const sent = await requestsOf(v1, (c) => c.tool(id, {}));
@@ -215,6 +216,24 @@ test('tool(): a slug, an /ai path and the catalog /api/ai endpoint reach the sam
     const sent = await requestsOf(v1, (c) => c.tool(ref, { jewelry_type: 'ring' }));
     assert.deepEqual(sent, [['POST', '/ai/jewelry-designer', { jewelry_type: 'ring' }]], ref);
   }
+});
+
+test('tool(): with a base URL that does not end in /api, an /api path keeps its /api', async () => {
+  await withStub(v1, async (client, calls) => {
+    await client.tool('/api/ai/jewelry-designer', { jewelry_type: 'ring' });
+    assert.equal(calls[0].url, 'https://proxy.example.com/api/ai/jewelry-designer');
+  }, { baseURL: 'https://proxy.example.com' });
+});
+
+test('_request(): the catalog endpoint form (/api/ai/...), as the /docs pages show it, reaches /api/ai/...', async () => {
+  await withStub(v1, async (client, calls) => {
+    await client._request('POST', '/api/ai/essay-writer', { topic: 'Cities and cars', wordCount: 500 });
+    await client._request('POST', '/ai/essay-writer', { topic: 'Cities and cars', wordCount: 500 });
+    assert.deepEqual(calls.map((c) => c.url), [
+      'https://api.test/api/ai/essay-writer',
+      'https://api.test/api/ai/essay-writer',
+    ]);
+  });
 });
 
 test('toolV2(): every way to name a tool submits to /v2/ai/<slug>', async () => {

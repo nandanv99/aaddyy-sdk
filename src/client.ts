@@ -42,21 +42,34 @@ export interface ApiResponse<T = unknown> {
 const SDK_VERSION = '1.0.3';
 
 /**
- * Catalog tool ids whose endpoint is not /ai/<the id without "ai-">.
- * Every other id maps by dropping the "ai-" prefix.
+ * Catalog tool ids whose V1 endpoint is not /ai/<the id without "ai-">, as
+ * paths relative to the base URL. Every other id maps by dropping the "ai-"
+ * prefix.
  */
 const TOOL_ID_PATHS: Readonly<Record<string, string>> = {
-  'ai-article-generator': 'article',
-  'ai-title-generator': 'article-title',
-  'ai-content-curator': 'content-curator/analyze',
-  'ai-detector': 'ai-detector',
-  'ai-image-generator': 'image-generation',
-  'ai-tshirt-designer': 't-shirt-designer',
+  'ai-article-generator': '/ai/article',
+  'ai-title-generator': '/ai/article-title',
+  'ai-content-curator': '/ai/content-curator/analyze',
+  'ai-detector': '/ai/ai-detector',
+  'ai-image-generator': '/ai/image-generation',
+  'ai-tshirt-designer': '/ai/t-shirt-designer',
+  // Not an /ai tool, and V1 only: POST /api/profiles creates a draft profile.
+  'link-in-bio': '/profiles',
 };
+
+function mappedPath(tool: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(TOOL_ID_PATHS, tool) ? TOOL_ID_PATHS[tool] : undefined;
+}
+
+/** The V1 path, relative to the base URL, for a catalog tool id or slug. */
+function v1PathForToolId(tool: string): string {
+  return mappedPath(tool) ?? `/ai/${tool.replace(/^ai-/, '')}`;
+}
 
 /** The tool's path under /ai/ (no leading slash) for a catalog tool id or slug. */
 function slugForToolId(tool: string): string {
-  if (Object.prototype.hasOwnProperty.call(TOOL_ID_PATHS, tool)) return TOOL_ID_PATHS[tool];
+  const path = mappedPath(tool);
+  if (path && path.startsWith('/ai/')) return path.slice('/ai/'.length);
   return tool.replace(/^ai-/, '');
 }
 
@@ -184,7 +197,7 @@ export class AADDYY {
    * (the catalog's `endpoint` field starts with /api).
    */
   private v1PathFor(toolPath: string): string {
-    if (!toolPath.startsWith('/')) return `/ai/${slugForToolId(toolPath)}`;
+    if (!toolPath.startsWith('/')) return v1PathForToolId(toolPath);
     return this.withoutApiPrefix(toolPath);
   }
 
@@ -207,10 +220,12 @@ export class AADDYY {
 
   /**
    * Make an authenticated API request and return the response's `data`.
-   * Used internally by resource classes.
+   * `path` is relative to the base URL. A leading /api is dropped when the base
+   * URL already ends in /api, so a catalog endpoint such as /api/ai/essay-writer
+   * works as it is. Used internally by resource classes.
    */
   async _request<T>(method: string, path: string, body?: Record<string, unknown>): Promise<T> {
-    const url = `${this.baseURL}${path}`;
+    const url = `${this.baseURL}${this.withoutApiPrefix(path)}`;
     const res = await fetch(url, {
       method,
       headers: {
