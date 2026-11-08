@@ -1,11 +1,15 @@
 {
   "name": "aaddyy",
-  "version": "1.0.2",
-  "description": "Official SDK for AADDYY — 100+ AI tools via one npm package. Image generation, article writing, video creation, math solving, SEO analysis, and more.",
+  "version": "1.0.3",
+  "description": "Official SDK for AADDYY \u2014 50+ AI tools via one npm package: typed methods for common tools, and tool()/toolV2() for any tool in the live catalog. Image generation, article writing, video creation, math solving, SEO analysis, and more.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
+    "test": "npm run build && tsc -p test/tsconfig.json && node --test test/*.test.js",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test",
     "dev": "npx tsx src/index.ts"
   },
   "keywords": [
@@ -32,6 +36,15 @@
   },
   "files": [
     "dist/**/*",
-    "README.md"
-  ]
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nandanv99/aaddyy-sdk.git"
+  },
+  "homepage": "https://www.aaddyy.com",
+  "bugs": {
+    "url": "https://github.com/nandanv99/aaddyy-sdk/issues"
+  }
 }

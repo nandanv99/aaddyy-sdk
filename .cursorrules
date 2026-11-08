@@ -19,18 +19,19 @@ src/
 ├── index.ts              # Main export — AADDYY class + all errors + resource classes
 ├── client.ts             # AADDYY class — auth, _request(), _requestV2()
 ├── errors.ts             # Typed errors: AADDYYError, InsufficientCreditsError, etc.
+├── params.ts             # Internal: build request bodies (rename 1.0.2 names, drop unread fields)
 └── resources/            # One file per resource group
-    ├── articles.ts       # client.articles.generate(), outline(), improve()
-    ├── titles.ts         # client.titles.generate(), seo(), abTest()
+    ├── articles.ts       # client.articles.generate(), specialized(), outline(), improve()
+    ├── titles.ts         # client.titles.generate(), seo(), abTest(), competitive()
     ├── essays.ts         # client.essays.write()
     ├── emails.ts         # client.emails.write(), jobEmail()
-    ├── images.ts         # client.images.generate(), upscale(V2), removeWatermark(V2)
+    ├── images.ts         # client.images.generate(), upscale(V2), removeWatermark(V2), createPrompt(V2)
     ├── logos.ts          # client.logos.create()
-    ├── videos.ts         # client.videos.generate(), audioToVideo(V2), eduClip(V2)
+    ├── videos.ts         # client.videos.eduClip() (V1 start + clip status polling); generate()/audioToVideo() reject: tools switched off
     ├── captions.ts       # client.captions.generate(), instagram(V2), linkedin(V2)
     ├── math.ts           # client.math.solve()
     ├── physics.ts        # client.physics.solve()
-    ├── seo.ts            # client.seo.analyze(), backlinks()
+    ├── seo.ts            # client.seo.analyze(); backlinks() rejects: use analyze({ url, includeBacklinks: true })
     ├── keywords.ts       # client.keywords.research()
     ├── headshots.ts      # client.headshots.generate()
     └── synonyms.ts       # client.synonyms.find()
@@ -43,17 +44,20 @@ src/
 When a new tool is added to the AADDYY backend:
 
 1. Create `src/resources/[name].ts` with a class that takes `AADDYY` client in constructor
-2. Use `this.client._request('POST', '/ai/[endpoint]', params)` for V1 tools
-3. Use `this.client._requestV2('/[endpoint]', params)` for V2 async tools
-4. Import and add as a property in `src/client.ts` (constructor + class field)
-5. Export from `src/index.ts`
-6. Update `README.md` with usage examples
-7. Rebuild: `npx tsc`
+2. Type the parameters from the tool's validation rules (`aaddyy-backend/AI_TOOLS/<Tool>/validation/rules.js`), not the catalog's parameter list
+3. Use `this.client._request('POST', '/ai/[endpoint]', body)` for V1 tools
+4. Use `this.client._requestV2('/[endpoint]', body)` for V2 async tools
+5. Import and add as a property in `src/client.ts` (constructor + class field)
+6. Export the class and its parameter types from `src/index.ts`
+7. Add request tests to `test/resources.test.js` and update `README.md`
+8. Build and test: `npm test`
 
 ### V1 vs V2
 - **V1 (synchronous)**: `_request('POST', '/ai/...', body)` — returns result immediately
 - **V2 (async)**: `_requestV2('/tool-path', body)` — submits job, polls every 2s until completed (max 600s)
-- V2 tools: upscale-image, watermark-remover, image-prompt-creator, instagram/linkedin post generators, product-photo-studio, edu-clip-generator, audio-to-video, content-curator, pdf-merge, nano-banana-2, prompt-maker, research-blog-writer
+- Polling (`_poll()`, also used by `videos.eduClip()`): a status request that fails for a passing reason (network error, gateway page, rate limit, 5xx) is retried with a doubling wait (up to 60s); any other error rejects at once. Errors after the job started carry `details.jobId`
+- V2 methods resolve to the job's `result`: the tool's whole response body (`{ success, message, data }`); V1 methods resolve to `data`
+- V2 methods here: upscale-image, watermark-remover, image-prompt-creator, instagram/linkedin post generators (`client.toolV2()` reaches any other tool)
 
 ---
 
@@ -62,6 +66,6 @@ When a new tool is added to the AADDYY backend:
 1. **Zero dependencies** — native fetch only (Node 18+)
 2. **API key from env** — `new AADDYY()` auto-reads `AADDYY_API_KEY`
 3. **TypeScript-first** — full type safety, declaration files emitted
-4. **V2 handled internally** — caller never sees jobId, only final result
+4. **V2 handled internally** — caller gets only the final result; an error raised after the job started carries `details.jobId`
 5. **Typed errors** — InsufficientCreditsError, RateLimitError, AuthenticationError
-6. **User-Agent** — sends `aaddyy-sdk/1.0.0 node/{version}` for analytics
+6. **User-Agent** — sends `aaddyy-sdk/<package version> node/{version}` for analytics (keep `SDK_VERSION` in `src/client.ts` equal to package.json)

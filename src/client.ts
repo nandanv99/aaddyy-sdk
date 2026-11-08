@@ -5,10 +5,9 @@
 
 import {
   AADDYYError,
-  InsufficientCreditsError,
-  RateLimitError,
   AuthenticationError,
-  EmailVerificationError,
+  RateLimitError,
+  errorFromBody,
 } from './errors.js';
 
 import { Articles } from './resources/articles.js';
@@ -39,7 +38,81 @@ export interface ApiResponse<T = unknown> {
   requestId?: string;
 }
 
-const SDK_VERSION = '1.0.0';
+/** Sent in the User-Agent header. Keep it equal to package.json "version". */
+const SDK_VERSION = '1.0.3';
+
+/**
+ * Catalog tool ids whose V1 endpoint is not /ai/<the id without "ai-">, as
+ * paths relative to the base URL. Every other id maps by dropping the "ai-"
+ * prefix.
+ */
+const TOOL_ID_PATHS: Readonly<Record<string, string>> = {
+  'ai-article-generator': '/ai/article',
+  'ai-title-generator': '/ai/article-title',
+  'ai-content-curator': '/ai/content-curator/analyze',
+  'ai-detector': '/ai/ai-detector',
+  'ai-image-generator': '/ai/image-generation',
+  'ai-tshirt-designer': '/ai/t-shirt-designer',
+  // Not an /ai tool, and V1 only: POST /api/profiles creates a draft profile.
+  'link-in-bio': '/profiles',
+};
+
+function mappedPath(tool: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(TOOL_ID_PATHS, tool) ? TOOL_ID_PATHS[tool] : undefined;
+}
+
+/** The V1 path, relative to the base URL, for a catalog tool id or slug. */
+function v1PathForToolId(tool: string): string {
+  return mappedPath(tool) ?? `/ai/${tool.replace(/^ai-/, '')}`;
+}
+
+/** The tool's path under /ai/ (no leading slash) for a catalog tool id or slug. */
+function slugForToolId(tool: string): string {
+  const path = mappedPath(tool);
+  if (path && path.startsWith('/ai/')) return path.slice('/ai/'.length);
+  return tool.replace(/^ai-/, '');
+}
+
+/** V2 jobs: the wait between polls, and how long to poll. */
+const V2_POLL_MS = 2_000;
+const V2_TIMEOUT_MS = 600_000;
+
+/** The longest wait between two polls, after polls that failed. */
+const MAX_POLL_WAIT_MS = 60_000;
+
+/**
+ * Add the job id and its status request to an error raised after the job
+ * started: the job may still finish, and the caller can still collect it.
+ */
+function withJob(err: AADDYYError, jobId: string, statusRequest: string): AADDYYError {
+  const writable = err as unknown as { details?: Record<string, unknown>; message: string };
+  writable.details = { ...(err.details ?? {}), jobId };
+  writable.message = `${err.message} Job ${jobId} had started; check it with ${statusRequest}.`;
+  return err;
+}
+
+/**
+ * Whether a failed status request is worth repeating: a network error, a reply
+ * that is not JSON (a gateway page), a rate limit, or a server error. The job
+ * itself is not affected by these, and polling it again is free.
+ */
+function isPassingPollError(err: unknown): boolean {
+  if (!(err instanceof AADDYYError)) return true; // fetch itself failed
+  if (err instanceof RateLimitError || err.code === 'BAD_RESPONSE') return true;
+  return err.statusCode === 429 || err.statusCode >= 500;
+}
+
+/** Options for AADDYY._poll(). Internal. */
+export interface PollOptions<J> {
+  /** The wait before each status request, in ms. */
+  intervalMs: number;
+  /** How long to poll, in ms, before rejecting with JOB_TIMEOUT. */
+  timeoutMs: number;
+  /** True when the job has finished, whether it succeeded or failed. */
+  isDone: (job: J) => boolean;
+  /** The start of the JOB_TIMEOUT message, such as 'Job abc did not finish within 600 s.' */
+  timeoutMessage: string;
+}
 
 export class AADDYY {
   private readonly apiKey: string;
@@ -88,38 +161,71 @@ export class AADDYY {
   }
 
   /**
-   * Call any AADDYY tool by its endpoint path or tool ID.
-   * Use this for tools that don't have a dedicated resource method.
+   * Call any AADDYY tool synchronously (V1) by its tool ID, slug or endpoint path.
+   * Use this for tools that don't have a dedicated resource method. Read the
+   * tool's parameters from the live catalog.
    *
    * @example
-   * // By endpoint path
-   * await client.tool('/ai/jewelry-designer', { keyword: 'diamond ring' })
+   * // By tool ID (ai-qr-code-generator → POST /ai/qr-code-generator)
+   * await client.tool('ai-qr-code-generator', { content: 'https://www.aaddyy.com' })
    *
-   * // By tool ID (auto-resolves to /ai/{id})
-   * await client.tool('ai-jewelry-designer', { keyword: 'diamond ring' })
+   * // By endpoint path, as the catalog's `endpoint` field gives it
+   * await client.tool('/api/ai/jewelry-designer', {
+   *   jewelry_type: 'ring', design_style: 'classic', material: 'gold_yellow',
+   * })
    */
   async tool(toolPath: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    const path = toolPath.startsWith('/') ? toolPath : `/ai/${toolPath.replace(/^ai-/, '')}`;
-    return this._request('POST', path, params);
+    return this._request('POST', this.v1PathFor(toolPath), params);
   }
 
   /**
-   * Call any V2 (async) tool by its path. Handles submit + poll automatically.
+   * Call any V2 (async) tool by its tool ID, slug or path. Handles submit + poll
+   * automatically and resolves to the job's `result`: the tool's whole response
+   * body, `{ success, message, data }`.
    *
    * @example
    * await client.toolV2('/nano-banana-2', { prompt: 'a cat' })
+   * await client.toolV2('ai-nano-banana-2', { prompt: 'a cat' })
    */
   async toolV2(toolPath: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    const path = toolPath.startsWith('/') ? toolPath : `/${toolPath.replace(/^ai-/, '')}`;
-    return this._requestV2(path, params);
+    return this._requestV2(this.v2PathFor(toolPath), params);
   }
 
   /**
-   * Make an authenticated API request.
-   * Used internally by resource classes.
+   * The V1 path relative to the base URL. A tool ID or slug becomes /ai/<slug>.
+   * A path is kept, without a leading /api when the base URL already ends in /api
+   * (the catalog's `endpoint` field starts with /api).
+   */
+  private v1PathFor(toolPath: string): string {
+    if (!toolPath.startsWith('/')) return v1PathForToolId(toolPath);
+    return this.withoutApiPrefix(toolPath);
+  }
+
+  /**
+   * The tool path after /v2/ai. Accepts a tool ID, a slug, /<slug>, /ai/<slug>,
+   * /v2/ai/<slug>, and the catalog's /api/ai/<slug> and /api/v2/ai/<slug>.
+   */
+  private v2PathFor(toolPath: string): string {
+    if (!toolPath.startsWith('/')) return `/${slugForToolId(toolPath)}`;
+    let path = this.withoutApiPrefix(toolPath);
+    if (path.startsWith('/v2/')) path = path.slice('/v2'.length);
+    if (path.startsWith('/ai/')) path = path.slice('/ai'.length);
+    return path;
+  }
+
+  private withoutApiPrefix(path: string): string {
+    const baseEndsInApi = /\/api\/?$/.test(this.baseURL);
+    return baseEndsInApi && path.startsWith('/api/') ? path.slice('/api'.length) : path;
+  }
+
+  /**
+   * Make an authenticated API request and return the response's `data`.
+   * `path` is relative to the base URL. A leading /api is dropped when the base
+   * URL already ends in /api, so a catalog endpoint such as /api/ai/essay-writer
+   * works as it is. Used internally by resource classes.
    */
   async _request<T>(method: string, path: string, body?: Record<string, unknown>): Promise<T> {
-    const url = `${this.baseURL}${path}`;
+    const url = `${this.baseURL}${this.withoutApiPrefix(path)}`;
     const res = await fetch(url, {
       method,
       headers: {
@@ -130,49 +236,111 @@ export class AADDYY {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    const data: ApiResponse<T> = await res.json() as ApiResponse<T>;
+    let data: ApiResponse<T> | null;
+    try {
+      data = await res.json() as ApiResponse<T> | null;
+    } catch {
+      data = null;
+    }
+    if (!data || typeof data !== 'object') {
+      throw new AADDYYError({
+        message: `Unexpected non-JSON response (HTTP ${res.status})`,
+        code: 'BAD_RESPONSE',
+        statusCode: res.status,
+      });
+    }
 
     if (!data.success) {
-      const raw = data as unknown as Record<string, unknown>;
-      const code = (raw.error as Record<string, unknown>)?.code as string ||
-                   (raw.code as string) || '';
-
-      if (res.status === 401) throw new AuthenticationError();
-      if (res.status === 429) throw new RateLimitError(raw);
-      if (code === 'INSUFFICIENT_CREDITS') throw new InsufficientCreditsError(raw);
-      if (code === 'EMAIL_NOT_VERIFIED') throw new EmailVerificationError();
-      throw new AADDYYError(raw);
+      throw errorFromBody(res.status, data as unknown as Record<string, unknown>);
     }
 
     return data.data;
   }
 
   /**
-   * Make an async V2 API request (submit + poll).
-   * Used internally for video, image editing, and other long-running tools.
+   * Make an async V2 API request (submit + poll) and return the job's `result`:
+   * the tool's whole response body, `{ success, message, data }`.
+   * Used internally for image editing, social posts and other long-running tools.
    */
   async _requestV2<T>(toolPath: string, body: Record<string, unknown>): Promise<T> {
-    // Submit job
-    const submitData = await this._request<{ jobId: string }>('POST', `/v2/ai${toolPath}`, body);
-    const { jobId } = submitData;
+    const submitted = await this._request<{ jobId?: string } | null>('POST', `/v2/ai${toolPath}`, body);
+    if (!submitted || !submitted.jobId) {
+      throw new AADDYYError({ error: { message: 'The job was not started: the response has no jobId.', code: 'BAD_RESPONSE' } });
+    }
+    const jobId = String(submitted.jobId);
 
-    // Poll until completed or failed (max 600s)
+    type V2Job = { status: string; result: T; error: string | null; code?: string | null };
+    const job = await this._poll<V2Job>(`/v2/ai/jobs/${encodeURIComponent(jobId)}`, jobId, {
+      intervalMs: V2_POLL_MS,
+      timeoutMs: V2_TIMEOUT_MS,
+      isDone: (j) => j.status === 'completed' || j.status === 'failed',
+      timeoutMessage: `Job ${jobId} did not finish within ${V2_TIMEOUT_MS / 1000} s.`,
+    });
+
+    if (job.status === 'failed') {
+      // The poll gives the tool's error code (VALIDATION_ERROR,
+      // INSUFFICIENT_CREDITS, ...) but no HTTP status.
+      throw errorFromBody(0, {
+        success: false,
+        error: {
+          message: job.error || 'Job failed',
+          code: job.code || 'JOB_FAILED',
+          details: { jobId },
+        },
+      });
+    }
+    return job.result;
+  }
+
+  /**
+   * Poll a job that has started: GET `path` until `isDone(job)`, then resolve
+   * to that job. Waits `intervalMs` before each status request. A status
+   * request that fails for a passing reason (network error, gateway page, rate
+   * limit, server error) is sent again after a longer wait (doubled each time,
+   * up to 60 s), until `timeoutMs` has passed; then the call rejects with
+   * JOB_TIMEOUT. Any other error (401, 403, 404, ...) rejects at once. Each
+   * rejection carries `details.jobId` and the status URL, because the job may
+   * still finish and the caller can still collect it. Internal.
+   */
+  async _poll<J>(path: string, jobId: string, options: PollOptions<J>): Promise<J> {
+    const { intervalMs, timeoutMs, isDone, timeoutMessage } = options;
+    const statusRequest = `GET ${this.baseURL}${this.withoutApiPrefix(path)}`;
     const start = Date.now();
-    const timeout = 600_000;
-    const interval = 2_000;
+    let wait = intervalMs;
+    let lastError: unknown;
 
-    while (Date.now() - start < timeout) {
-      await new Promise(r => setTimeout(r, interval));
-
-      const job = await this._request<{ status: string; result: T; error: string | null }>(
-        'GET',
-        `/v2/ai/jobs/${jobId}`
-      );
-
-      if (job.status === 'completed') return job.result;
-      if (job.status === 'failed') throw new AADDYYError({ message: job.error || 'Job failed' });
+    while (Date.now() - start < timeoutMs) {
+      await this._sleep(wait);
+      let job: J;
+      try {
+        job = await this._request<J>('GET', path);
+      } catch (err) {
+        if (!isPassingPollError(err)) throw withJob(err as AADDYYError, jobId, statusRequest);
+        lastError = err;
+        wait = Math.min(wait * 2, MAX_POLL_WAIT_MS);
+        continue;
+      }
+      lastError = undefined;
+      wait = intervalMs;
+      if (job && typeof job === 'object' && isDone(job)) return job;
     }
 
-    throw new AADDYYError({ message: `Job ${jobId} timed out after ${timeout / 1000}s` });
+    const lastFailure = lastError instanceof Error
+      ? ` The last status request failed: ${lastError.message}`
+      : '';
+    throw new AADDYYError({
+      error: {
+        message: `${timeoutMessage} It may still finish: poll ${statusRequest}.${lastFailure}`,
+        code: 'JOB_TIMEOUT',
+        details: { jobId },
+      },
+    });
+  }
+
+  /**
+   * Wait between polls. Internal; tests replace it to skip the wait.
+   */
+  _sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
