@@ -41,10 +41,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/adivyas99/aaddyy-sdk.git"
+    "url": "git+https://github.com/nandanv99/aaddyy-sdk.git"
   },
   "homepage": "https://www.aaddyy.com",
   "bugs": {
-    "url": "https://github.com/adivyas99/aaddyy-sdk/issues"
+    "url": "https://github.com/nandanv99/aaddyy-sdk/issues"
   }
 }
